@@ -3,4 +3,4 @@
 PACKAGE_KEY=$1
 
 cd /home/ssm-user
-touch testito.txt
+echo $PACKAGE_KEY >> "`date +%s`.txt"
