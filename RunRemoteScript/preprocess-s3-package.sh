@@ -1,4 +1,4 @@
 #!/bin/bash
 
 cd /home/ssm-user
-touch $1
+touch testing.txt
