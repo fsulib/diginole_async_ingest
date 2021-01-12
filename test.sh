@@ -1,3 +1,3 @@
 #!/bin/bash
 
-echo "It worked!" > /tmp/output.txt
+touch /tmp/test.txt
