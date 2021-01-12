@@ -1,3 +1,4 @@
 #!/bin/bash
 
-touch /tmp/test.txt
+cd /home/ssm-user
+touch test.txt
