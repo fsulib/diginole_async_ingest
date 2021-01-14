@@ -7,7 +7,7 @@ PACKAGE_ID=$(basename $PACKAGE_KEY .zip)
 PACKAGE_LOG=/diginole_async_ingest/logs/$PACKAGE_ID.log
 S3_BUCKET='async-ingest.isle.lib.fsu.edu'
 
-echo "$(date): download-s3-package.sh triggered for file $PACKAGE_FILE with eTag $PACKAGE_ETAG..." >> $PACKAGE_LOG
+echo "$(date): download-s3-package.sh triggered for file $PACKAGE_FILE with eTag $SUBMITTED_ETAG..." >> $PACKAGE_LOG
 
 # Sleep for 15 minutes to give submitter time to delete file if its incorrect. 
 echo "$(date): Sleeping for 15 minutes..." >> $PACKAGE_LOG
