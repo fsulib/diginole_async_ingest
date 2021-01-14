@@ -21,20 +21,6 @@ then
 
     echo "$(date): $S3_BUCKET/$PACKAGE_KEY successfully downloaded to /diginole_async_ingest/packages/$PACKAGE_FILE." >> $PACKAGE_LOG 
 
-    echo "$(date): Tagging $S3_BUCKET/$PACKAGE_KEY with processing metadata..." >> $PACKAGE_LOG 
-    aws s3api put-object-tagging \
-      --bucket $S3_BUCKET \
-      --key $PACKAGE_KEY \
-      --tagging "{\"TagSet\": [{\"Key\": \"status\", \"Value\": \"downloaded\" },{ \"Key\": \"downloaded\", \"Value\": \"$(date)\"}]}" \
-      >> $PACKAGE_LOG
-
-    if [ $? = 0 ]
-    then
-      echo "$(date): $S3_BUCKET/$PACKAGE_KEY successfully tagged with processing metadata." >> $PACKAGE_LOG 
-    else
-      echo "$(date): Error tagging $S3_BUCKET/$PACKAGE_KEY with processing metadata." >> $PACKAGE_LOG 
-    fi
-
     echo "$(date): Moving $S3_BUCKET/$PACKAGE_KEY to $S3_BUCKET/processing/$PACKAGE_FILE..." >> $PACKAGE_LOG 
     aws s3 mv s3://$S3_BUCKET/$PACKAGE_KEY s3://$S3_BUCKET/processing/$PACKAGE_FILE >> $PACKAGE_LOG
 
