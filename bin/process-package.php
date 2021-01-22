@@ -67,7 +67,7 @@ if (array_key_exists('batch_id', $package_metadata)) {
   }
   else {
     $log = array_merge($log, $process_output['log']);
-    $log[] = getTime() . ": Preprocessing {$package_metadata['filename']} successful!";
+    $log[] = getTime() . ": Processing {$package_metadata['filename']} successful!";
   }
 }
 

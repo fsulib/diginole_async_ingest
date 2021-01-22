@@ -81,7 +81,7 @@ function preprocess_package($package_metadata) {
   $log = [];
   $log['log'][] = getTime() . ": Beginning preprocessing of {$package_metadata['filename']}....";
   $drush_user_info_results = [];
-  exec("drush --root=/var/www/html/ user:information {$package_metadata['submitter_email']} --format=csv --fields=uid", $drush_user_info_results['output'], $drush_user_info_results['exit_code']);
+  exec("drush --root=/var/www/html/ user:information {$package_metadata['submitter_email']} --format=csv --fields=uid 2>&1", $drush_user_info_results['output'], $drush_user_info_results['exit_code']);
   if ($drush_user_info_results['exit_code'] == 0) {
     $submitter_drupal_user_id = trim($drush_user_info_results['output'][0]);
     $log['log'][] = "{$package_metadata['filename']} submitter_email '{$package_metadata['submitter_email']}' is Drupal user $submitter_drupal_user_id.";
@@ -95,16 +95,24 @@ function preprocess_package($package_metadata) {
   $log['log'][] = "Running drush command: $drush_command";
   $drush_islandora_preprocess_results = [];
   exec($drush_command, $drush_islandora_preprocess_results['output'], $drush_islandora_preprocess_results['exit_code']);
-  $batch_id = str_replace('SetId: ', '', $drush_islandora_preprocess_results['output'][0]);
-  $batch_id = str_replace('[ok]', '', $batch_id);
-  $batch_id = str_replace(' ', '', $batch_id);
+  $batch_id = log_strip(str_replace('SetId: ', '', $drush_islandora_preprocess_results['output'][0]));
   $log['batch_id'] = $batch_id;
   $log['log'][] = "{$package_metadata['filename']} preprocessed, batch_id = $batch_id.";
-  shell_exec("rm /tmp/{$package_metadata['filename']}");
   return $log;
 }
 function process_package($package_metadata) {
   $log = [];
-  $log['log'][] = "Processing....";
+  $drush_islandora_process_results = [];
+  $drush_command = "drush --root=/var/www/html/ -v -u 1 ibi 2>&1";
+  exec($drush_command, $drush_islandora_process_results['output'], $drush_islandora_process_results['exit_code']);
+  $log['log'] = array_map('log_strip', $drush_islandora_process_results['output']);
+  shell_exec("rm /tmp/{$package_metadata['filename']}");
   return $log;
+}
+
+function log_strip($string) {
+  $string = str_replace('[ok]', '', $string);
+  $string = str_replace('[status]', '', $string);
+  $string = str_replace('  ', '', $string);
+  return $string;
 }
