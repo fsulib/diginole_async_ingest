@@ -1,8 +1,9 @@
 import collections
+import datetime
+import glob
 import json
 import os
 import time
-import datetime
 
 s3_path = 'ingest.lib.fsu.edu/diginole/ais'
 package_path = '/diginole_async_ingest/packages'
@@ -51,6 +52,18 @@ def download_oldest_new_package():
   oldest_new_package_name = oldest_new_package[1]
   os.system('aws s3 cp s3://{0}/new/{1} {2}/{1}'.format(s3_path, oldest_new_package_name, package_path))
   log("{0} detected and downloaded to {1}/{0}.".format(oldest_new_package_name, package_path))
+
+def move_s3_package(package, destination)
+  if destination == 'error':
+  elif destination == 'done':
+  os.system('aws s3 cp s3://{0}/new/{1} s3:/{0}/{2}/{1}'.format(s3_path, package, destination))
+
+def check_downloaded_packages():
+  downloaded_packages = glob.glob("{0}/*.zip".format(package_path))
+  if len(downloaded_packages) > 0:
+    return downloaded_packages
+  else:
+    return False
 
 def run():
   if check_new_packages():
