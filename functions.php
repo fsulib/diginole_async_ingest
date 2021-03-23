@@ -1,27 +1,5 @@
 <?php
 
-// Get the current formatted time for log messages
-function getTime() {
-  return trim(shell_exec('date'));
-}
-
-// Selects oldest package in packages directory for processing
-// If packages directory contains file "stop", return that instead
-function selectPackage() {
-  $packages = shell_exec('ls -t /diginole_async_ingest/packages');
-  $packages_array = explode("\n", trim($packages));
-  if (in_array('stop', $packages_array)) {
-    $package = 'stop';
-  }
-  else {
-    $package = end($packages_array);
-    if (empty($package)) {
-      $package = FALSE;
-    }
-  }
-  return $package;
-}
-
 // Check to make sure package has a manifest.json with valid keys
 function validatePackage($package_filename) {
   $package_metadata = [];
@@ -108,11 +86,4 @@ function process_package($package_metadata) {
   $log['log'] = array_map('log_strip', $drush_islandora_process_results['output']);
   shell_exec("rm /tmp/{$package_metadata['filename']}");
   return $log;
-}
-
-function log_strip($string) {
-  $string = str_replace('[ok]', '', $string);
-  $string = str_replace('[status]', '', $string);
-  $string = str_replace('  ', '', $string);
-  return $string;
 }

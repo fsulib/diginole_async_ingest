@@ -5,7 +5,8 @@ import json
 import os
 import time
 
-s3_path = 'ingest.lib.fsu.edu/diginole/ais'
+s3_bucket = os.getenv('DIGINOLE_AIS_S3BUCKET')
+s3_path = "{0}/diginole/ais".format(s3_bucket)
 package_path = '/diginole_async_ingest/packages'
 
 def log(message):
@@ -53,10 +54,8 @@ def download_oldest_new_package():
   os.system('aws s3 cp s3://{0}/new/{1} {2}/{1}'.format(s3_path, oldest_new_package_name, package_path))
   log("{0} detected and downloaded to {1}/{0}.".format(oldest_new_package_name, package_path))
 
-def move_s3_package(package, destination)
-  if destination == 'error':
-  elif destination == 'done':
-  os.system('aws s3 cp s3://{0}/new/{1} s3:/{0}/{2}/{1}'.format(s3_path, package, destination))
+def move_new_s3_package(package, destination):
+  os.system('aws s3 mv s3://{0}/new/{1} s3://{0}/{2}/{1}'.format(s3_path, package, destination))
 
 def check_downloaded_packages():
   downloaded_packages = glob.glob("{0}/*.zip".format(package_path))
@@ -64,6 +63,9 @@ def check_downloaded_packages():
     return downloaded_packages
   else:
     return False
+
+def delete_downloaded_package(package):
+  os.remove("{0}/{1}".format(package_path, package))
 
 def run():
   if check_new_packages():
