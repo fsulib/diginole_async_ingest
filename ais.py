@@ -7,8 +7,9 @@ import datetime
 s3_path = 'ingest.lib.fsu.edu/diginole/ais'
 package_path = '/diginole_async_ingest/packages'
 
-def log(package, message):
+def log(message):
   os.system("./log.sh '{0}'".format(message))
+  print(message)
 
 def list_new_packages():
   packages = {}
@@ -49,3 +50,9 @@ def download_oldest_new_package():
   oldest_new_package = packages[0]
   oldest_new_package_name = oldest_new_package[1]
   os.system('aws s3 cp s3://{0}/new/{1} {2}/{1}'.format(s3_path, oldest_new_package_name, package_path))
+  log("{0} detected and downloaded to {1}/{0}.".format(oldest_new_package_name, package_path))
+
+def run():
+  if check_new_packages():
+    download_oldest_new_package()
+    
