@@ -116,7 +116,7 @@ def download_oldest_new_package():
   oldest_new_package = packages[0]
   oldest_new_package_name = oldest_new_package[1]
   os.system('aws s3 cp s3://{0}/new/{1} {2}/{1}'.format(s3_path, oldest_new_package_name, package_path))
-  log("New package {0} detected and downloaded to {1}/{0}.".format(oldest_new_package_name, package_path))
+  log("New package {0}/new/{1} detected and downloaded to {2}/{1}.".format(s3_path, oldest_new_package_name, package_path))
   return oldest_new_package_name
 
 def validate_package(package_name):
