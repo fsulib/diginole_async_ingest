@@ -1,22 +1,45 @@
 # Imports import collections
+import collections
 import configparser
 import datetime
 import glob
 import json
 import os
 import time
+import xml.etree.ElementTree
 import zipfile
 
 
 # Variables
+apache_name = os.getenv('APACHE_CONTAINER_NAME')
 s3_bucket = os.getenv('DIGINOLE_AIS_S3BUCKET')
 s3_path = "{0}/diginole/ais".format(s3_bucket)
 package_path = '/diginole_async_ingest/packages'
+cmodels = [
+  'islandora:sp_pdf',
+  'ir:thesisCModel',
+  'ir:citationCModel',
+  'islandora:sp_basic_image',
+  'islandora:sp_large_image_cmodel',
+  'islandora:sp-audioCModel',
+  'islandora:sp_videoCModel',
+  #'islandora:collectionCModel',
+  #'islandora:binaryObjectCModel',
+  #'islandora:compoundCModel',
+  #'islandora:bookCModel',
+  #'islandora:newspaperCModel',
+  #'islandora:newspaperIssueCModel'
+]
 
 
 # Stand Alone Functions
+def get_current_time():
+  return int(time.time())
+
 def log(message):
-  os.system("./log.sh '{0}'".format(message))
+  current_time = get_current_time()
+  logcmd = 'docker exec {0} bash -c "drush --root=/var/www/html sql-query \\"insert into diginole_ais_log (time, message) values ({1}, \'{2}\');\\""'.format(apache_name, current_time, message)
+  os.system(logcmd)
   print(message)
 
 def move_new_s3_package(package, destination):
@@ -31,6 +54,20 @@ def check_downloaded_packages():
     return downloaded_packages
   else:
     return False
+
+def get_file_extension(filename):
+  return filename.rpartition('.')[2]
+
+def get_file_basename(filename):
+  return filename.rpartition('.')[0]
+
+def get_drupaluid_from_email(email):
+  cmd = "docker exec {0} bash -c 'drush --root=/var/www/html user:information {1} --format=csv --fields=uid 2>&1'".format(apache_name, email)
+  output = os.popen(cmd).readlines()
+  if len(output) > 1:
+    return 1
+  else:
+    return int(output[0])
 
 
 # Compound Functions
@@ -52,13 +89,13 @@ def list_new_packages():
         int(package_mod_time[2]),
       )
       package_mod_timestamp = int(time.mktime(pdt.timetuple()))
-      curtime = int(time.time())
-      package_age = curtime - package_mod_timestamp
+      current_time = get_current_time() 
+      package_age = current_time - package_mod_timestamp
       if package_age > 900:
-        package_extension = package_name.rpartition('.')[2]
+        package_extension = get_file_extension(package_name) 
         if package_extension != 'zip':
           move_new_s3_package(package_name, 'error')
-          log("Package {0}/new/{1} detected, but is not a zip file. Package moved to {0}/error/{1}.".format(s3_path, package_name))
+          log("New package {0}/new/{1} detected, but is not a zip file. Package moved to {0}/error/{1}.".format(s3_path, package_name))
         else:
           package_key = str(package_mod_timestamp)
           packages[package_key] = package_name
@@ -73,20 +110,21 @@ def check_new_packages():
   else:
     return False
 
+
 def download_oldest_new_package():
   packages = list_new_packages()
   oldest_new_package = packages[0]
   oldest_new_package_name = oldest_new_package[1]
   os.system('aws s3 cp s3://{0}/new/{1} {2}/{1}'.format(s3_path, oldest_new_package_name, package_path))
-  log("{0} detected and downloaded to {1}/{0}.".format(oldest_new_package_name, package_path))
+  log("New package {0} detected and downloaded to {1}/{0}.".format(oldest_new_package_name, package_path))
   return oldest_new_package_name
 
 def validate_package(package_name):
+  package_metadata = {}
   package_errors = []
   package = zipfile.ZipFile("{0}/{1}".format(package_path, package_name), 'r')
   package_contents = package.namelist()
 
-  # Validate manifest.ini file
   if 'manifest.ini' not in package_contents:
     package_errors.append('Missing manifest.ini file')
   else:
@@ -95,24 +133,43 @@ def validate_package(package_name):
     if 'package' not in manifest.sections():
       package_errors.append('manifest.ini missing [package] section')
     else:
-      package_metadata = {}
-      package_metadata['submitter_email'] = manifest['package']['submitter_email']
-      package_metadata['content_model'] = manifest['package']['content_model']
-      package_metadata['parent_collection'] = manifest['package']['parent_collection']
-      print(package_metadata)
+      package_metadata['submitter_email'] = manifest['package']['submitter_email'] if 'submitter_email' in manifest['package'].keys() else package_errors.append('manifest.ini missing submitter_email')
+      package_metadata['parent_collection'] = manifest['package']['parent_collection'] if 'parent_collection' in manifest['package'].keys() else package_errors.append('manifest.ini missing parent_collection')
+      package_metadata['content_model'] = manifest['package']['content_model'] if 'content_model' in manifest['package'].keys() else package_errors.append('manifest.ini missing content_model')
+      if package_metadata['content_model'] not in cmodels:
+        package_errors.append("'{0}' is not a valid content model".format(package_metadata['content_model']))
   
-  
-  # Validate package filenames + IID
-  # Validate package contents
+  package_contents.remove('manifest.ini')
+  for filename in package_contents:
+    if get_file_extension(filename) == 'xml':
+      xmldata = xml.etree.ElementTree.fromstring(package.read(filename).decode('utf-8')) 
+      identifiers = xmldata.findall('{http://www.loc.gov/mods/v3}identifier')
+      for identifier in identifiers:
+        if identifier.attrib['type'].lower() == 'iid':
+          iid = identifier.text
+          if iid != get_file_basename(filename):
+            package_errors.append("{0} filename does not match contained IID '{1}'".format(filename, iid))
+    else:
+      associated_mods = "{0}.xml".format(get_file_basename(filename))
+      if associated_mods not in package_contents:
+        package_errors.append("{0} has no associated MODS record".format(filename))
 
   if len(package_errors) > 0:
-    return package_errors
+    log("Package {0} failed to validate with the following errors: {1}.".format(package_name, ', '.join(package_errors)))
+    move_new_s3_package(package_name, 'error')
+    return False
   else:
-    return True
+    log("Package {0} passed validation check.".format(package_name, ', '.join(package_errors)))
+    return package_metadata
 
 
 # Main function
 def run():
-  if check_new_packages():
+  if not check_new_packages():
+    print("AIS ran but didn't find any new packages to process.")
+  else:
     package_name = download_oldest_new_package()
+    package_metadata = validate_package(package_name)
+    if package_metadata:
+      print('placeholder')
     
