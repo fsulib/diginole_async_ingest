@@ -32,7 +32,7 @@ cmodels = [
 ]
 
 
-# Stand Alone Functions
+# Independent Functions
 def get_current_time():
   return int(time.time())
 
@@ -70,7 +70,7 @@ def get_drupaluid_from_email(email):
     return int(output[0])
 
 
-# Compound Functions
+# Dependent Functions
 def list_new_packages():
   packages = {}
   output = os.popen('aws s3 ls s3://{0}/new --recursive'.format(s3_path)).readlines()
