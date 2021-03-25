@@ -125,7 +125,7 @@ def download_oldest_new_package():
   return oldest_new_package_name
 
 def validate_package(package_name):
-  package_metadata = {}
+  package_metadata = {'filename': package_name}
   package_errors = []
   package = zipfile.ZipFile("{0}/{1}".format(package_path, package_name), 'r')
   package_contents = package.namelist()
