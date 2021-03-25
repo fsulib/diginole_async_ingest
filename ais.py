@@ -1,4 +1,4 @@
-# Imports import collections
+# Imports
 import collections
 import configparser
 import datetime
@@ -11,12 +11,14 @@ import zipfile
 
 
 # Variables
+silence_output = '2>&1 >/dev/null'
 pidfile_path = '/tmp/ais.pid'
 apache_name = os.getenv('APACHE_CONTAINER_NAME')
 s3_bucket = os.getenv('DIGINOLE_AIS_S3BUCKET')
 s3_path = "{0}/diginole/ais".format(s3_bucket)
 s3_wait = 0 # Set to 900 for a 15 minute wait
 package_path = '/diginole_async_ingest/packages'
+tmp_path = '/tmp/ais'
 cmodels = [
   'islandora:sp_pdf',
   'ir:thesisCModel',
@@ -53,12 +55,12 @@ def get_current_time():
 
 def log(message):
   current_time = get_current_time()
-  logcmd = 'docker exec {0} bash -c "drush --root=/var/www/html sql-query \\"insert into diginole_ais_log (time, message) values ({1}, \'{2}\');\\""'.format(apache_name, current_time, message)
+  logcmd = 'docker exec {0} bash -c "drush --root=/var/www/html sql-query \\"insert into diginole_ais_log (time, message) values ({1}, \'{2}\');\\"" {3}'.format(apache_name, current_time, message, silence_output)
   os.system(logcmd)
   print(message)
 
 def move_new_s3_package(package, destination):
-  os.system('aws s3 mv s3://{0}/new/{1} s3://{0}/{2}/{1}'.format(s3_path, package, destination))
+  os.system('aws s3 mv s3://{0}/new/{1} s3://{0}/{2}/{1} {3}'.format(s3_path, package, destination, silence_output))
 
 def delete_downloaded_package(package):
   os.remove("{0}/{1}".format(package_path, package))
@@ -80,6 +82,7 @@ def get_drupaluid_from_email(email):
   cmd = "docker exec {0} bash -c 'drush --root=/var/www/html user:information {1} --format=csv --fields=uid 2>&1'".format(apache_name, email)
   output = os.popen(cmd).readlines()
   if len(output) > 1:
+    log("Submitter email '{0}' could not be matched to an existing Drupal user. Ingesting as administrator (UID1) instead.".format(email))
     return 1
   else:
     return int(output[0])
@@ -88,6 +91,22 @@ def get_iid_exempt_cmodels():
   cmdstr = "docker exec {0} bash -c 'drush --root=/var/www/html vget diginole_purlz_exempt_cmodels'".format(apache_name)
   output = os.popen(cmdstr).readlines()[0].lstrip('diginole_purlz_exempt_cmodels: ').lstrip("'").rstrip().rstrip("'")
   return output.split(', ')
+
+def create_demanifested_package(package_name):
+  package_original = zipfile.ZipFile("{0}/{1}".format(package_path, package_name), 'r')
+  package_demanifested = zipfile.ZipFile("{0}/{1}.demanifested".format(package_path, package_name), 'w')
+  for item in package_original.infolist():
+    buffer = package_original.read(item.filename)
+    if item.filename != 'manifest.ini':
+      package_demanifested.writestr(item, buffer)
+  package_original.close()
+  package_demanifested.close()
+  os.system("rm {0}/{1}".format(package_path, package_name))
+  os.system("mv {0}/{1}.demanifested {0}/{1}".format(package_path, package_name))
+
+def move_package_to_tmp(package_name):
+  os.system("mkdir -p {0} {1}".format(tmp_path, silence_output))
+  os.system("cp {0}/{1} {2}/{1}".format(package_path, package_name, tmp_path))
 
 
 # Dependent Functions
@@ -130,12 +149,11 @@ def check_new_packages():
   else:
     return False
 
-
 def download_oldest_new_package():
   packages = list_new_packages()
   oldest_new_package = packages[0]
   oldest_new_package_name = oldest_new_package[1]
-  os.system('aws s3 cp s3://{0}/new/{1} {2}/{1}'.format(s3_path, oldest_new_package_name, package_path))
+  os.system('aws s3 cp s3://{0}/new/{1} {2}/{1} {3}'.format(s3_path, oldest_new_package_name, package_path, silence_output))
   log("New package {0}/new/{1} detected and downloaded to {2}/{1}.".format(s3_path, oldest_new_package_name, package_path))
   return oldest_new_package_name
 
@@ -184,10 +202,19 @@ def validate_package(package_name):
     return False
   else:
     package_metadata['status'] = 'validated'
-    log("Package {0} passed validation check.".format(package_name, ', '.join(package_errors)))
+    log("Package {0} passed validation check.".format(package_name))
     return package_metadata
 
 def package_preprocess(package_metadata):
+  #demanifest_package(package_metadata['filename']) 
+  move_package_to_tmp(package_metadata['filename'])
+
+  drupaluid = get_drupaluid_from_email(package_metadata['submitter_email'])
+  drushcmd = "drush --root=/var/www/html/ -u {0} ibsp --type=zip --parent={1} --content_models={2} --scan_target={3}/{4}".format(drupaluid, package_metadata['parent_collection'], package_metadata['content_model'], tmp_path, package_metadata['filename'])
+  dockercmd = "docker exec {0} bash -c '{1}'".format(apache_name, drushcmd)
+  print(dockercmd)
+
+
   package_metadata['status'] = 'preprocessed'
   package_metadata['batch_id'] = '?'
   return package_metadata
@@ -199,7 +226,9 @@ def package_process(package_metadata):
 # Main function
 def run():
   running = check_pidfile()
-  if not running:
+  if running:
+    print("AIS was triggered while still running.")
+  else:
     write_pidfile()
     if not check_new_packages():
       print("AIS ran but didn't find any new packages to process.")
@@ -207,6 +236,9 @@ def run():
       package_name = download_oldest_new_package()
       package_metadata = validate_package(package_name)
       if package_metadata:
-        print('placeholder')
+        package_metadata = package_preprocess(package_metadata)
+        package_metadata = package_process(package_metadata)
+        print(package_metadata)
+    log('its done')
     delete_pidfile()
     
