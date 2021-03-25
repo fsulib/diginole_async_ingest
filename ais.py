@@ -14,6 +14,7 @@ import zipfile
 apache_name = os.getenv('APACHE_CONTAINER_NAME')
 s3_bucket = os.getenv('DIGINOLE_AIS_S3BUCKET')
 s3_path = "{0}/diginole/ais".format(s3_bucket)
+s3_wait = 900
 package_path = '/diginole_async_ingest/packages'
 cmodels = [
   'islandora:sp_pdf',
@@ -96,7 +97,7 @@ def list_new_packages():
       package_mod_timestamp = int(time.mktime(pdt.timetuple()))
       current_time = get_current_time() 
       package_age = current_time - package_mod_timestamp
-      if package_age > 900:
+      if package_age > s3_wait:
         package_extension = get_file_extension(package_name) 
         if package_extension != 'zip':
           move_new_s3_package(package_name, 'error')
