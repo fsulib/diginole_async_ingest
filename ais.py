@@ -14,7 +14,7 @@ import zipfile
 apache_name = os.getenv('APACHE_CONTAINER_NAME')
 s3_bucket = os.getenv('DIGINOLE_AIS_S3BUCKET')
 s3_path = "{0}/diginole/ais".format(s3_bucket)
-s3_wait = 900
+s3_wait = 0 # Set to 900 for a 15 minute wait
 package_path = '/diginole_async_ingest/packages'
 cmodels = [
   'islandora:sp_pdf',
