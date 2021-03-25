@@ -69,6 +69,11 @@ def get_drupaluid_from_email(email):
   else:
     return int(output[0])
 
+def get_iid_exempt_cmodels():
+  cmdstr = "docker exec {0} bash -c 'drush --root=/var/www/html vget diginole_purlz_exempt_cmodels'".format(apache_name)
+  output = os.popen(cmdstr).readlines()[0].lstrip('diginole_purlz_exempt_cmodels: ').lstrip("'").rstrip().rstrip("'")
+  return output.split(', ')
+
 
 # Dependent Functions
 def list_new_packages():
@@ -143,12 +148,16 @@ def validate_package(package_name):
   for filename in package_contents:
     if get_file_extension(filename) == 'xml':
       xmldata = xml.etree.ElementTree.fromstring(package.read(filename).decode('utf-8')) 
+      iid = False
       identifiers = xmldata.findall('{http://www.loc.gov/mods/v3}identifier')
       for identifier in identifiers:
         if identifier.attrib['type'].lower() == 'iid':
           iid = identifier.text
           if iid != get_file_basename(filename):
             package_errors.append("{0} filename does not match contained IID '{1}'".format(filename, iid))
+      iid_exempt_cmodels = get_iid_exempt_cmodels()
+      if not iid and package_metadata['content_model'] not in iid_exempt_cmodels:
+        package_errors.append("{0} does not contain an IID".format(filename))
     else:
       associated_mods = "{0}.xml".format(get_file_basename(filename))
       if associated_mods not in package_contents:
