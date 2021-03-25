@@ -168,9 +168,18 @@ def validate_package(package_name):
     move_new_s3_package(package_name, 'error')
     return False
   else:
+    package_metadata['status'] = 'validated'
     log("Package {0} passed validation check.".format(package_name, ', '.join(package_errors)))
     return package_metadata
 
+def package_preprocess(package_metadata):
+  package_metadata['status'] = 'preprocessed'
+  package_metadata['batch_id'] = '?'
+  return package_metadata
+
+def package_process(package_metadata):
+  package_metadata['status'] = 'processed'
+  return package_metadata
 
 # Main function
 def run():
