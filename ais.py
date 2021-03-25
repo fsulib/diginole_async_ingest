@@ -11,6 +11,7 @@ import zipfile
 
 
 # Variables
+pidfile_path = '/tmp/ais.pid'
 apache_name = os.getenv('APACHE_CONTAINER_NAME')
 s3_bucket = os.getenv('DIGINOLE_AIS_S3BUCKET')
 s3_path = "{0}/diginole/ais".format(s3_bucket)
@@ -34,6 +35,19 @@ cmodels = [
 
 
 # Independent Functions
+def write_pidfile():
+  pid = os.getpid()
+  print(pid, file=open(pidfile_path, 'w'))
+  
+def delete_pidfile():
+  os.unlink(pidfile_path)
+  
+def check_pidfile():
+  if os.path.isfile(pidfile_path):
+    return True
+  else:
+    return False
+
 def get_current_time():
   return int(time.time())
 
@@ -184,11 +198,15 @@ def package_process(package_metadata):
 
 # Main function
 def run():
-  if not check_new_packages():
-    print("AIS ran but didn't find any new packages to process.")
-  else:
-    package_name = download_oldest_new_package()
-    package_metadata = validate_package(package_name)
-    if package_metadata:
-      print('placeholder')
+  running = check_pidfile()
+  if not running:
+    write_pidfile()
+    if not check_new_packages():
+      print("AIS ran but didn't find any new packages to process.")
+    else:
+      package_name = download_oldest_new_package()
+      package_metadata = validate_package(package_name)
+      if package_metadata:
+        print('placeholder')
+    delete_pidfile()
     
