@@ -188,7 +188,7 @@ def validate_package(package_name):
       package_metadata['parent_collection'] = manifest['package']['parent_collection'] if 'parent_collection' in manifest['package'].keys() else package_errors.append('manifest.ini missing parent_collection')
       package_metadata['content_model'] = manifest['package']['content_model'] if 'content_model' in manifest['package'].keys() else package_errors.append('manifest.ini missing content_model')
       if package_metadata['content_model'] not in cmodels:
-        package_errors.append("'{0}' is not a valid content model".format(package_metadata['content_model']))
+        package_errors.append("{0} is not a valid content model".format(package_metadata['content_model']))
   package_contents.remove('manifest.ini')
   for filename in package_contents:
     if get_file_extension(filename) == 'xml':
@@ -199,7 +199,7 @@ def validate_package(package_name):
         if identifier.attrib['type'].lower() == 'iid':
           iid = identifier.text
           if iid != get_file_basename(filename):
-            package_errors.append("{0} filename does not match contained IID '{1}'".format(filename, iid))
+            package_errors.append("{0} filename does not match contained IID {1}".format(filename, iid))
       iid_exempt_cmodels = get_iid_exempt_cmodels()
       if not iid and package_metadata['content_model'] not in iid_exempt_cmodels:
         package_errors.append("{0} does not contain an IID".format(filename))
