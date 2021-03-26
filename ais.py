@@ -12,13 +12,13 @@ import zipfile
 
 # Variables
 silence_output = '2>&1 >/dev/null'
-pidfile_path = '/tmp/ais.pid'
 apache_name = os.getenv('APACHE_CONTAINER_NAME')
 s3_bucket = os.getenv('DIGINOLE_AIS_S3BUCKET')
 s3_path = "{0}/diginole/ais".format(s3_bucket)
 s3_wait = 0 # Set to 900 for a 15 minute wait
 package_path = '/diginole_async_ingest/packages'
 tmp_path = '/tmp/ais'
+pidfile = "{0}/pid".format(tmp_path)
 cmodels = [
   'islandora:sp_pdf',
   'ir:thesisCModel',
@@ -38,16 +38,21 @@ cmodels = [
 
 # Independent Functions
 def write_pidfile():
+  os.system("mkdir -p {0} {1}".format(tmp_path, silence_output))
   pid = os.getpid()
-  print(pid, file=open(pidfile_path, 'w'))
+  print(pid, file=open(pidfile, 'w'))
   
 def delete_pidfile():
-  os.unlink(pidfile_path)
+  os.system("rm {0}".format(pidfile))
   
 def check_pidfile():
-  if os.path.isfile(pidfile_path):
-    return True
+  print("Checking to see if any other AIS processes are currently running...")
+  if os.path.isfile(pidfile):
+    pid = open(pidfile, "r").read().strip()
+    print("Another AIS process (pid:{0}) is currently running.".format(pid))
+    return pid
   else:
+    print("No other AIS processes detected.")
     return False
 
 def get_current_time():
@@ -60,9 +65,11 @@ def log(message):
   print(message)
 
 def move_new_s3_package(package, destination):
+  print("Moving {0}/new/{1} to {0}/{2}/{1}...".format(s3_path, package, destination))
   os.system('aws s3 mv s3://{0}/new/{1} s3://{0}/{2}/{1} {3}'.format(s3_path, package, destination, silence_output))
 
 def delete_downloaded_package(package):
+  print("Deleting {0}/{1}...".format(package_path, package))
   os.remove("{0}/{1}".format(package_path, package))
 
 def check_downloaded_packages():
@@ -79,10 +86,11 @@ def get_file_basename(filename):
   return filename.rpartition('.')[0]
 
 def get_drupaluid_from_email(email):
-  cmd = "docker exec {0} bash -c 'drush --root=/var/www/html user:information {1} --format=csv --fields=uid 2>&1'".format(apache_name, email)
-  output = os.popen(cmd).readlines()
-  if len(output) > 1:
-    log("Submitter email '{0}' could not be matched to an existing Drupal user. Ingesting as administrator (UID1) instead.".format(email))
+  print("Getting Drupal user ID for submitter...") 
+  cmd = "docker exec {0} bash -c 'drush --root=/var/www/html user:information {1} --format=csv --fields=uid {2}'".format(apache_name, email, silence_output)
+  output = os.popen(cmd, stderr=STDOUT).readlines()
+  if len(output) != 1:
+    log("Package manifest's submitter email '{0}' could not be matched to an existing Drupal user. Ingesting as administrator (UID1) instead.".format(email))
     return 1
   else:
     return int(output[0])
@@ -92,7 +100,7 @@ def get_iid_exempt_cmodels():
   output = os.popen(cmdstr).readlines()[0].lstrip('diginole_purlz_exempt_cmodels: ').lstrip("'").rstrip().rstrip("'")
   return output.split(', ')
 
-def create_demanifested_package(package_name):
+def create_preprocess_package(package_name):
   package_original = zipfile.ZipFile("{0}/{1}".format(package_path, package_name), 'r')
   package_demanifested = zipfile.ZipFile("{0}/{1}.demanifested".format(package_path, package_name), 'w')
   for item in package_original.infolist():
@@ -103,8 +111,6 @@ def create_demanifested_package(package_name):
   package_demanifested.close()
   os.system("rm {0}/{1}".format(package_path, package_name))
   os.system("mv {0}/{1}.demanifested {0}/{1}".format(package_path, package_name))
-
-def move_package_to_tmp(package_name):
   os.system("mkdir -p {0} {1}".format(tmp_path, silence_output))
   os.system("cp {0}/{1} {2}/{1}".format(package_path, package_name, tmp_path))
 
@@ -143,6 +149,7 @@ def list_new_packages():
   return sorted_packages_list
 
 def check_new_packages():
+  print("Checking for new packages to download...")
   packages = list_new_packages()
   if len(packages) > 0:
     return True
@@ -158,11 +165,11 @@ def download_oldest_new_package():
   return oldest_new_package_name
 
 def validate_package(package_name):
+  print("Validating {0}...".format(package_name))
   package_metadata = {'filename': package_name}
   package_errors = []
   package = zipfile.ZipFile("{0}/{1}".format(package_path, package_name), 'r')
   package_contents = package.namelist()
-
   if 'manifest.ini' not in package_contents:
     package_errors.append('Missing manifest.ini file')
   else:
@@ -176,7 +183,6 @@ def validate_package(package_name):
       package_metadata['content_model'] = manifest['package']['content_model'] if 'content_model' in manifest['package'].keys() else package_errors.append('manifest.ini missing content_model')
       if package_metadata['content_model'] not in cmodels:
         package_errors.append("'{0}' is not a valid content model".format(package_metadata['content_model']))
-  
   package_contents.remove('manifest.ini')
   for filename in package_contents:
     if get_file_extension(filename) == 'xml':
@@ -195,7 +201,6 @@ def validate_package(package_name):
       associated_mods = "{0}.xml".format(get_file_basename(filename))
       if associated_mods not in package_contents:
         package_errors.append("{0} has no associated MODS record".format(filename))
-
   if len(package_errors) > 0:
     log("Package {0} failed to validate with the following errors: {1}.".format(package_name, ', '.join(package_errors)))
     move_new_s3_package(package_name, 'error')
@@ -206,32 +211,31 @@ def validate_package(package_name):
     return package_metadata
 
 def package_preprocess(package_metadata):
-  #demanifest_package(package_metadata['filename']) 
-  move_package_to_tmp(package_metadata['filename'])
-
+  print("Preprocessing {0}...".format(package_metadata['filename']))
+  create_preprocess_package(package_metadata['filename']) 
   drupaluid = get_drupaluid_from_email(package_metadata['submitter_email'])
   drushcmd = "drush --root=/var/www/html/ -u {0} ibsp --type=zip --parent={1} --content_models={2} --scan_target={3}/{4}".format(drupaluid, package_metadata['parent_collection'], package_metadata['content_model'], tmp_path, package_metadata['filename'])
   dockercmd = "docker exec {0} bash -c '{1}'".format(apache_name, drushcmd)
-  print(dockercmd)
-
-
   package_metadata['status'] = 'preprocessed'
   package_metadata['batch_id'] = '?'
   return package_metadata
 
 def package_process(package_metadata):
+  print("Processing {0}...".format(package_metadata['filename']))
   package_metadata['status'] = 'processed'
+  print("{0} processed.".format(package_metadata['filename']))
   return package_metadata
 
 # Main function
 def run():
-  running = check_pidfile()
-  if running:
-    print("AIS was triggered while still running.")
+  print("Executing main AIS process...")
+  pid = check_pidfile()
+  if pid:
+    print("Halting to allow original AIS process to continue.")
   else:
     write_pidfile()
     if not check_new_packages():
-      print("AIS ran but didn't find any new packages to process.")
+      print("No new packages detected in {0}/new/.")
     else:
       package_name = download_oldest_new_package()
       package_metadata = validate_package(package_name)
@@ -239,6 +243,5 @@ def run():
         package_metadata = package_preprocess(package_metadata)
         package_metadata = package_process(package_metadata)
         print(package_metadata)
-    log('its done')
     delete_pidfile()
-    
+  print("AIS main process completed.")
