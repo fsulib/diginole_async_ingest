@@ -98,10 +98,9 @@ def get_drupaluid_from_email(package_metadata):
     if line[0] == package_metadata['submitter_email']:
       uid = line[1]
   if uid:
-    log("{0}'s manifest.ini submitter email '{1}' matched to Drupal user {2}.".format(package_metadata['filename'], package_metadata['submitter_email'], uid), drupal_report = False, log_file = package_metadata['filename'])
+    log("{0} manifest.ini submitter email {1} matched to Drupal user {2}.".format(package_metadata['filename'], package_metadata['submitter_email'], uid), drupal_report = False, log_file = package_metadata['filename'])
   else:
-    log("{0}'s manifest.ini submitter email '{0}' could not be matched to an existing Drupal user, submitter will be replaced by admin (UID1) instead.".format(package_metadata['filename'], package_metadata['submitter_email']), drupal_report = True, log_file = package_metadata['filename'])
-    log("Submitter email '{0}' could not be matched to an existing Drupal user, submitter will be replaced by admin (UID1) instead.".format(email), drupal_report = False, log_file = False)
+    log("{0} manifest.ini submitter email {0} could not be matched to an existing Drupal user, submitter will be replaced by admin (UID1) instead.".format(package_metadata['filename'], package_metadata['submitter_email']), drupal_report = True, log_file = package_metadata['filename'])
     uid = 1
   return uid
 
