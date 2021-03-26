@@ -5,6 +5,7 @@ import datetime
 import glob
 import json
 import os
+import subprocess
 import time
 import xml.etree.ElementTree
 import zipfile
@@ -13,12 +14,12 @@ import zipfile
 # Variables
 silence_output = '2>&1 >/dev/null'
 apache_name = os.getenv('APACHE_CONTAINER_NAME')
+drush_exec = ['docker', 'exec', apache_name, 'bash', '-c']
 s3_bucket = os.getenv('DIGINOLE_AIS_S3BUCKET')
 s3_path = "{0}/diginole/ais".format(s3_bucket)
 s3_wait = 0 # Set to 900 for a 15 minute wait
 package_path = '/diginole_async_ingest/packages'
-tmp_path = '/tmp/ais'
-pidfile = "{0}/pid".format(tmp_path)
+pidfile = "/tmp/ais.pid"
 cmodels = [
   'islandora:sp_pdf',
   'ir:thesisCModel',
@@ -38,7 +39,6 @@ cmodels = [
 
 # Independent Functions
 def write_pidfile():
-  os.system("mkdir -p {0} {1}".format(tmp_path, silence_output))
   pid = os.getpid()
   print(pid, file=open(pidfile, 'w'))
   
@@ -46,30 +46,33 @@ def delete_pidfile():
   os.system("rm {0}".format(pidfile))
   
 def check_pidfile():
-  print("Checking to see if any other AIS processes are currently running...")
+  log("Checking to see if any other AIS processes are currently running...", drupal_report = False, log_file = False)
   if os.path.isfile(pidfile):
     pid = open(pidfile, "r").read().strip()
-    print("Another AIS process (pid:{0}) is currently running.".format(pid))
+    log("Another AIS process (pid:{0}) is currently running.".format(pid), drupal_report = False, log_file = False)
     return pid
   else:
-    print("No other AIS processes detected.")
+    log("No other AIS processes detected.", drupal_report = False, log_file = False)
     return False
 
 def get_current_time():
   return int(time.time())
 
-def log(message):
-  current_time = get_current_time()
-  logcmd = 'docker exec {0} bash -c "drush --root=/var/www/html sql-query \\"insert into diginole_ais_log (time, message) values ({1}, \'{2}\');\\"" {3}'.format(apache_name, current_time, message, silence_output)
-  os.system(logcmd)
+def log(message, drupal_report = False, log_file = False):
   print(message)
+  if drupal_report:
+    current_time = get_current_time()
+    logcmd = 'docker exec {0} bash -c "drush --root=/var/www/html sql-query \\"insert into diginole_ais_log (time, message) values ({1}, \'{2}\');\\"" {3}'.format(apache_name, current_time, message, silence_output)
+    os.system(logcmd)
+  if log_file:
+    print(message, file=open("{0}/{1}.log".format(package_path, log_file), 'a'))
 
-def move_new_s3_package(package, destination):
-  print("Moving {0}/new/{1} to {0}/{2}/{1}...".format(s3_path, package, destination))
-  os.system('aws s3 mv s3://{0}/new/{1} s3://{0}/{2}/{1} {3}'.format(s3_path, package, destination, silence_output))
+def move_s3_file(source, destination):
+  log("Moving {0} {1}...".format(source, destination), drupal_report = False, log_file = False)
+  os.system('aws s3 mv {0} {1} {2}'.format(source, destination, silence_output))
 
 def delete_downloaded_package(package):
-  print("Deleting {0}/{1}...".format(package_path, package))
+  log("Deleting {0}/{1}...".format(package_path, package), drupal_report = False, log_file = package)
   os.remove("{0}/{1}".format(package_path, package))
 
 def check_downloaded_packages():
@@ -85,15 +88,22 @@ def get_file_extension(filename):
 def get_file_basename(filename):
   return filename.rpartition('.')[0]
 
-def get_drupaluid_from_email(email):
-  print("Getting Drupal user ID for submitter...") 
-  cmd = "docker exec {0} bash -c 'drush --root=/var/www/html user:information {1} --format=csv --fields=uid {2}'".format(apache_name, email, silence_output)
-  output = os.popen(cmd, stderr=STDOUT).readlines()
-  if len(output) != 1:
-    log("Package manifest's submitter email '{0}' could not be matched to an existing Drupal user. Ingesting as administrator (UID1) instead.".format(email))
-    return 1
+def get_drupaluid_from_email(package_metadata):
+  log("Getting Drupal user ID for submitter...", drupal_report = False, log_file = False) 
+  cmd = "docker exec {0} bash -c 'drush --root=/var/www/html sql-query \"select mail, uid from users;\"'".format(apache_name)
+  output = os.popen(cmd).readlines()
+  uid = False
+  for line in output:
+    line = line.strip().split('\t')
+    if line[0] == package_metadata['submitter_email']:
+      uid = line[1]
+  if uid:
+    log("{0}'s manifest.ini submitter email '{1}' matched to Drupal user {2}.".format(package_metadata['filename'], package_metadata['submitter_email'], uid), drupal_report = False, log_file = package_metadata['filename'])
   else:
-    return int(output[0])
+    log("{0}'s manifest.ini submitter email '{0}' could not be matched to an existing Drupal user, submitter will be replaced by admin (UID1) instead.".format(package_metadata['filename'], package_metadata['submitter_email']), drupal_report = True, log_file = package_metadata['filename'])
+    log("Submitter email '{0}' could not be matched to an existing Drupal user, submitter will be replaced by admin (UID1) instead.".format(email), drupal_report = False, log_file = False)
+    uid = 1
+  return uid
 
 def get_iid_exempt_cmodels():
   cmdstr = "docker exec {0} bash -c 'drush --root=/var/www/html vget diginole_purlz_exempt_cmodels'".format(apache_name)
@@ -102,17 +112,13 @@ def get_iid_exempt_cmodels():
 
 def create_preprocess_package(package_name):
   package_original = zipfile.ZipFile("{0}/{1}".format(package_path, package_name), 'r')
-  package_demanifested = zipfile.ZipFile("{0}/{1}.demanifested".format(package_path, package_name), 'w')
+  package_demanifested = zipfile.ZipFile("{0}/{1}.preprocess".format(package_path, package_name), 'w')
   for item in package_original.infolist():
     buffer = package_original.read(item.filename)
     if item.filename != 'manifest.ini':
       package_demanifested.writestr(item, buffer)
   package_original.close()
   package_demanifested.close()
-  os.system("rm {0}/{1}".format(package_path, package_name))
-  os.system("mv {0}/{1}.demanifested {0}/{1}".format(package_path, package_name))
-  os.system("mkdir -p {0} {1}".format(tmp_path, silence_output))
-  os.system("cp {0}/{1} {2}/{1}".format(package_path, package_name, tmp_path))
 
 
 # Dependent Functions
@@ -139,8 +145,9 @@ def list_new_packages():
       if package_age > s3_wait:
         package_extension = get_file_extension(package_name) 
         if package_extension != 'zip':
-          move_new_s3_package(package_name, 'error')
-          log("New package {0}/new/{1} detected, but is not a zip file. Package moved to {0}/error/{1}.".format(s3_path, package_name))
+          log("New package {0}/new/{1} detected, but is not a zip file. Package moved to {0}/error/{1}.".format(s3_path, package_name), drupal_report = True, log_file = package_name)
+          move_s3_file("s3://{0}/new/{1}".format(s3_path, package_name), "s3://{0}/error/{1}".format(s3_path, package_name))
+          move_s3_file("{0}/{1}.log".format(package_path, package_name), "s3://{0}/error/{1}.log".format(s3_path, package_name))
         else:
           package_key = str(package_mod_timestamp)
           packages[package_key] = package_name
@@ -149,7 +156,7 @@ def list_new_packages():
   return sorted_packages_list
 
 def check_new_packages():
-  print("Checking for new packages to download...")
+  log("Checking for new packages to download...", drupal_report = False, log_file = False)
   packages = list_new_packages()
   if len(packages) > 0:
     return True
@@ -161,11 +168,11 @@ def download_oldest_new_package():
   oldest_new_package = packages[0]
   oldest_new_package_name = oldest_new_package[1]
   os.system('aws s3 cp s3://{0}/new/{1} {2}/{1} {3}'.format(s3_path, oldest_new_package_name, package_path, silence_output))
-  log("New package {0}/new/{1} detected and downloaded to {2}/{1}.".format(s3_path, oldest_new_package_name, package_path))
+  log("New package {0}/new/{1} detected and downloaded to {2}/{1}.".format(s3_path, oldest_new_package_name, package_path), drupal_report = True, log_file = oldest_new_package_name)
   return oldest_new_package_name
 
 def validate_package(package_name):
-  print("Validating {0}...".format(package_name))
+  log("Validating {0}...".format(package_name), drupal_report = False, log_file = False)
   package_metadata = {'filename': package_name}
   package_errors = []
   package = zipfile.ZipFile("{0}/{1}".format(package_path, package_name), 'r')
@@ -202,46 +209,77 @@ def validate_package(package_name):
       if associated_mods not in package_contents:
         package_errors.append("{0} has no associated MODS record".format(filename))
   if len(package_errors) > 0:
-    log("Package {0} failed to validate with the following errors: {1}.".format(package_name, ', '.join(package_errors)))
-    move_new_s3_package(package_name, 'error')
+    log("Package {0} failed to validate with the following errors: {1}.".format(package_name, ', '.join(package_errors)), drupal_report = True, log_file = package_name)
+    move_s3_file("s3://{0}/new/{1}".format(s3_path, package_name), "s3://{0}/error/{1}".format(s3_path, package_name))
+    move_s3_file("{0}/{1}.log".format(package_path, package_name), "s3://{0}/error/{1}.log".format(s3_path, package_name))
+    os.system("rm {0}/{1}*".format(package_path, package_name))
+    log("{0} and {0}.log have been moved to {1}/error/.".format(package_name, s3_path), drupal_report = True, log_file = False)
     return False
   else:
     package_metadata['status'] = 'validated'
-    log("Package {0} passed validation check.".format(package_name))
+    log("Package {0} passed validation check.".format(package_name), drupal_report = True, log_file = package_name)
     return package_metadata
 
 def package_preprocess(package_metadata):
-  print("Preprocessing {0}...".format(package_metadata['filename']))
+  log("Preprocessing {0}...".format(package_metadata['filename']), drupal_report = False, log_file = False)
   create_preprocess_package(package_metadata['filename']) 
-  drupaluid = get_drupaluid_from_email(package_metadata['submitter_email'])
-  drushcmd = "drush --root=/var/www/html/ -u {0} ibsp --type=zip --parent={1} --content_models={2} --scan_target={3}/{4}".format(drupaluid, package_metadata['parent_collection'], package_metadata['content_model'], tmp_path, package_metadata['filename'])
-  dockercmd = "docker exec {0} bash -c '{1}'".format(apache_name, drushcmd)
+  drupaluid = get_drupaluid_from_email(package_metadata)
+  drushcmd = "drush --root=/var/www/html/ -u {0} ibsp --type=zip --parent={1} --content_models={2} --scan_target={3}/{4}.preprocess 2>&1".format(drupaluid, package_metadata['parent_collection'], package_metadata['content_model'], package_path, package_metadata['filename'])
+  drush_preprocess_exec = drush_exec.copy()
+  drush_preprocess_exec.append(drushcmd)
+  output = subprocess.check_output(drush_preprocess_exec)
+  output = output.decode('utf-8').strip().split()
   package_metadata['status'] = 'preprocessed'
-  package_metadata['batch_id'] = '?'
+  package_metadata['batch_set_id'] = output[1]
   return package_metadata
 
 def package_process(package_metadata):
-  print("Processing {0}...".format(package_metadata['filename']))
+  log("Processing {0}...".format(package_metadata['filename']), drupal_report = False, log_file = False)
+  drushcmd = "drush --root=/var/www/html/ -u 1 ibi --ingest_set={0} 2>&1".format(package_metadata['batch_set_id'])
+  drush_process_exec = drush_exec.copy()
+  drush_process_exec.append(drushcmd)
+  output = subprocess.check_output(drush_process_exec)
+  output = output.decode('utf-8').split('\n')
+  pids = []
+  loginfo = []
+  for line in output:
+    if line.startswith('Ingested'):
+      pids.append(line.split()[1].rstrip('.'))
+    elif line.startswith('Processing complete;') or line.startswith('information.') or line == '':
+      pass  
+    else:
+      loginfo.append(line)
+  pidstring = ", ".join(pids)
+  logstring = "\n".join(loginfo)
   package_metadata['status'] = 'processed'
-  print("{0} processed.".format(package_metadata['filename']))
+  log("{0} processed, produced PIDs: {1}".format(package_metadata['filename'], pidstring), drupal_report = True, log_file = package_metadata['filename'])
+  log("{0} processing produced the following log output:\n{1}".format(package_metadata['filename'], logstring), drupal_report = False, log_file = package_metadata['filename'])
   return package_metadata
+
+def process_available_s3_packages():
+  if not check_new_packages():
+    log("No new packages detected in {0}/new/.".format(s3_path), drupal_report = False, log_file = False)
+  else:
+    package_name = download_oldest_new_package()
+    package_metadata = validate_package(package_name)
+    if package_metadata:
+      package_metadata = package_preprocess(package_metadata)
+      package_metadata = package_process(package_metadata)
+      move_s3_file("s3://{0}/new/{1}".format(s3_path, package_name), "s3://{0}/done/{1}".format(s3_path, package_name))
+      move_s3_file("{0}/{1}.preprocess".format(package_path, package_name), "s3://{0}/done/{1}.preprocess".format(s3_path, package_name))
+      move_s3_file("{0}/{1}.log".format(package_path, package_name), "s3://{0}/done/{1}.log".format(s3_path, package_name))
+      os.system("rm {0}/{1}*".format(package_path, package_metadata['filename']))
+      process_available_s3_packages()
+
 
 # Main function
 def run():
-  print("Executing main AIS process...")
+  log("Executing main AIS process...", drupal_report = False, log_file = False)
   pid = check_pidfile()
   if pid:
-    print("Halting to allow original AIS process to continue.")
+    log("Halting to allow original AIS process to continue.", drupal_report = False, log_file = False)
   else:
     write_pidfile()
-    if not check_new_packages():
-      print("No new packages detected in {0}/new/.")
-    else:
-      package_name = download_oldest_new_package()
-      package_metadata = validate_package(package_name)
-      if package_metadata:
-        package_metadata = package_preprocess(package_metadata)
-        package_metadata = package_process(package_metadata)
-        print(package_metadata)
+    process_available_s3_packages()
     delete_pidfile()
-  print("AIS main process completed.")
+  log("AIS main process completed.", drupal_report = False, log_file = False)
