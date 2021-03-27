@@ -28,8 +28,7 @@ cmodels = [
   'islandora:sp_large_image_cmodel',
   'islandora:sp-audioCModel',
   'islandora:sp_videoCModel',
-  #'islandora:collectionCModel',
-  #'islandora:binaryObjectCModel',
+  'islandora:binaryObjectCModel',
   #'islandora:compoundCModel',
   #'islandora:bookCModel',
   #'islandora:newspaperCModel',
@@ -241,18 +240,31 @@ def package_process(package_metadata):
   output = output.decode('utf-8').split('\n')
   pids = []
   loginfo = []
-  for line in output:
-    if line.startswith('Ingested'):
-      pids.append(line.split()[1].rstrip('.'))
-    elif line.startswith('Processing complete;') or line.startswith('information.') or line == '':
-      pass  
-    else:
-      loginfo.append(line)
-  pidstring = ", ".join(pids)
-  logstring = "\n".join(loginfo)
-  package_metadata['status'] = 'processed'
-  log("{0} processed, produced PIDs: {1}".format(package_metadata['filename'], pidstring), drupal_report = True, log_file = package_metadata['filename'])
-  log("{0} processing produced the following log output:\n{1}".format(package_metadata['filename'], logstring), drupal_report = False, log_file = package_metadata['filename'])
+  if output[0].startswith('WD islandora: Failed to ingest object:'):
+    package_metadata['status'] = 'failed'
+    logstring = "\n".join(output)
+    log("{0} failed to ingest, see {1}/error/{0}.log for more information.".format(package_metadata['filename'], s3_path), drupal_report = True, log_file = False)
+    log("{0} failed to ingest with the following errors:\n{1}".format(package_metadata['filename'], logstring), drupal_report = False, log_file = package_metadata['filename'])
+    move_s3_file("s3://{0}/new/{1}".format(s3_path, package_metadata['filename']), "s3://{0}/error/{1}".format(s3_path, package_metadata['filename']))
+    move_s3_file("{0}/{1}.preprocess".format(package_path, package_metadata['filename']), "s3://{0}/error/{1}.preprocess".format(s3_path, package_metadata['filename']))
+    move_s3_file("{0}/{1}.log".format(package_path, package_metadata['filename']), "s3://{0}/error/{1}.log".format(s3_path, package_metadata['filename']))
+  else:
+    for line in output:
+      if line.startswith('Ingested'):
+        pids.append(line.split()[1].rstrip('.'))
+      elif line.startswith('Processing complete;') or line.startswith('information.') or line == '':
+        pass  
+      else:
+        loginfo.append(line)
+    pidstring = ", ".join(pids)
+    logstring = "\n".join(loginfo)
+    package_metadata['status'] = 'processed'
+    log("{0} processed, produced PIDs: {1}".format(package_metadata['filename'], pidstring), drupal_report = True, log_file = package_metadata['filename'])
+    log("{0} processing produced the following log output:\n{1}".format(package_metadata['filename'], logstring), drupal_report = False, log_file = package_metadata['filename'])
+    move_s3_file("s3://{0}/new/{1}".format(s3_path, package_metadata['filename']), "s3://{0}/done/{1}".format(s3_path, package_metadata['filename']))
+    move_s3_file("{0}/{1}.preprocess".format(package_path, package_metadata['filename']), "s3://{0}/done/{1}.preprocess".format(s3_path, package_metadata['filename']))
+    move_s3_file("{0}/{1}.log".format(package_path, package_metadata['filename']), "s3://{0}/done/{1}.log".format(s3_path, package_metadata['filename']))
+  os.system("rm {0}/{1}*".format(package_path, package_metadata['filename']))
   return package_metadata
 
 def process_available_s3_packages():
@@ -264,10 +276,6 @@ def process_available_s3_packages():
     if package_metadata:
       package_metadata = package_preprocess(package_metadata)
       package_metadata = package_process(package_metadata)
-      move_s3_file("s3://{0}/new/{1}".format(s3_path, package_name), "s3://{0}/done/{1}".format(s3_path, package_name))
-      move_s3_file("{0}/{1}.preprocess".format(package_path, package_name), "s3://{0}/done/{1}.preprocess".format(s3_path, package_name))
-      move_s3_file("{0}/{1}.log".format(package_path, package_name), "s3://{0}/done/{1}.log".format(s3_path, package_name))
-      os.system("rm {0}/{1}*".format(package_path, package_metadata['filename']))
       process_available_s3_packages()
 
 
