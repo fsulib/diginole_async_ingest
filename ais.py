@@ -222,7 +222,10 @@ def package_preprocess(package_metadata):
   log("Preprocessing {0}...".format(package_metadata['filename']), drupal_report = False, log_file = False)
   create_preprocess_package(package_metadata['filename']) 
   drupaluid = get_drupaluid_from_email(package_metadata)
-  drushcmd = "drush --root=/var/www/html/ -u {0} ibsp --type=zip --parent={1} --content_models={2} --scan_target={3}/{4}.preprocess 2>&1".format(drupaluid, package_metadata['parent_collection'], package_metadata['content_model'], package_path, package_metadata['filename'])
+  if package_metadata['content_model'] == 'islandora:binaryObjectCModel':
+    drushcmd = "drush --root=/var/www/html/ -u {0} ibobsp --parent={1} --scan_target={2}/{3}.preprocess 2>&1".format(drupaluid, package_metadata['parent_collection'], package_path, package_metadata['filename'])
+  else:
+    drushcmd = "drush --root=/var/www/html/ -u {0} ibsp --type=zip --parent={1} --content_models={2} --scan_target={3}/{4}.preprocess 2>&1".format(drupaluid, package_metadata['parent_collection'], package_metadata['content_model'], package_path, package_metadata['filename'])
   drush_preprocess_exec = drush_exec.copy()
   drush_preprocess_exec.append(drushcmd)
   output = subprocess.check_output(drush_preprocess_exec)
