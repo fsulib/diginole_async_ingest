@@ -15,8 +15,8 @@ import zipfile
 silence_output = '2>&1 >/dev/null'
 apache_name = os.getenv('APACHE_CONTAINER_NAME')
 drush_exec = ['docker', 'exec', apache_name, 'bash', '-c']
-s3_wait = int(os.getenv('DIGINOLE_AIS_S3WAIT'))
-s3_bucket = os.getenv('DIGINOLE_AIS_S3BUCKET')
+s3_wait = int(os.getenv('AIS_S3WAIT'))
+s3_bucket = os.getenv('AIS_S3BUCKET')
 s3_path = "{0}/diginole/ais".format(s3_bucket)
 package_path = '/diginole_async_ingest/packages'
 pidfile = "/tmp/ais.pid"
