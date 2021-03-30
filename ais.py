@@ -183,7 +183,7 @@ def validate_package(package_name):
       package_metadata['content_model'] = manifest['package']['content_model'] if 'content_model' in manifest['package'].keys() else package_errors.append('manifest.ini missing content_model')
       if package_metadata['content_model'] not in cmodels:
         package_errors.append("{0} is not a valid content model".format(package_metadata['content_model']))
-  package_contents.remove('manifest.ini')
+    package_contents.remove('manifest.ini')
   for filename in package_contents:
     if get_file_extension(filename) == 'xml':
       xmldata = xml.etree.ElementTree.fromstring(package.read(filename).decode('utf-8')) 
@@ -274,7 +274,7 @@ def process_available_s3_packages():
     if package_metadata:
       package_metadata = package_preprocess(package_metadata)
       package_metadata = package_process(package_metadata)
-      process_available_s3_packages()
+    process_available_s3_packages()
 
 
 # Main function
