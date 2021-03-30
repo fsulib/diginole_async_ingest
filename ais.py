@@ -179,10 +179,20 @@ def validate_package(package_name):
       package_errors.append('manifest.ini missing [package] section')
     else:
       package_metadata['submitter_email'] = manifest['package']['submitter_email'] if 'submitter_email' in manifest['package'].keys() else package_errors.append('manifest.ini missing submitter_email')
-      package_metadata['parent_collection'] = manifest['package']['parent_collection'] if 'parent_collection' in manifest['package'].keys() else package_errors.append('manifest.ini missing parent_collection')
       package_metadata['content_model'] = manifest['package']['content_model'] if 'content_model' in manifest['package'].keys() else package_errors.append('manifest.ini missing content_model')
       if package_metadata['content_model'] not in cmodels:
-        package_errors.append("{0} is not a valid content model".format(package_metadata['content_model']))
+        package_errors.append("manifest.ini content_model {0} is an invalid content model".format(package_metadata['content_model']))
+      if 'parent_collection' not in manifest['package'].keys(): 
+        package_errors.append('manifest.ini missing parent_collection')
+      else: 
+        package_metadata['parent_collection'] = manifest['package']['parent_collection']
+        drushcmd = 'drush --root=/var/www/html/ php-eval "echo islandora_object_load(\'{0}\')->id;"'.format(package_metadata['parent_collection'])
+        drush_parent_check = drush_exec.copy()
+        drush_parent_check.append(drushcmd)
+        output = subprocess.check_output(drush_parent_check)
+        output = output.decode('utf-8').split('\n')
+        if output[0] != package_metadata['parent_collection']:
+          package_errors.append("manifest.ini parent_collection {0} does not exist".format(package_metadata['parent_collection']))
     package_contents.remove('manifest.ini')
   for filename in package_contents:
     if get_file_extension(filename) == 'xml':
@@ -205,7 +215,7 @@ def validate_package(package_name):
     log("Package {0} failed to validate with the following errors: {1}.".format(package_name, ', '.join(package_errors)), drupal_report = True, log_file = package_name)
     move_s3_file("s3://{0}/new/{1}".format(s3_path, package_name), "s3://{0}/error/{1}".format(s3_path, package_name))
     move_s3_file("{0}/{1}.log".format(package_path, package_name), "s3://{0}/error/{1}.log".format(s3_path, package_name))
-    os.system("rm {0}/{1}*".format(package_path, package_name))
+    os.system("rm {0}/{1} {2}".format(package_path, package_name, silence_output))
     log("{0} and {0}.log have been moved to {1}/error/.".format(package_name, s3_path), drupal_report = True, log_file = False)
     return False
   else:
@@ -262,7 +272,6 @@ def package_process(package_metadata):
     move_s3_file("s3://{0}/new/{1}".format(s3_path, package_metadata['filename']), "s3://{0}/done/{1}".format(s3_path, package_metadata['filename']))
     move_s3_file("{0}/{1}.preprocess".format(package_path, package_metadata['filename']), "s3://{0}/done/{1}.preprocess".format(s3_path, package_metadata['filename']))
     move_s3_file("{0}/{1}.log".format(package_path, package_metadata['filename']), "s3://{0}/done/{1}.log".format(s3_path, package_metadata['filename']))
-  os.system("rm {0}/{1}*".format(package_path, package_metadata['filename']))
   return package_metadata
 
 def process_available_s3_packages():
