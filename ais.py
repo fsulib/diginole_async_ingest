@@ -109,14 +109,8 @@ def get_iid_exempt_cmodels():
   return output.split(', ')
 
 def create_preprocess_package(package_name):
-  package_original = zipfile.ZipFile("{0}/{1}".format(package_path, package_name), 'r')
-  package_demanifested = zipfile.ZipFile("{0}/{1}.preprocess".format(package_path, package_name), 'w')
-  for item in package_original.infolist():
-    buffer = package_original.read(item.filename)
-    if item.filename != 'manifest.ini':
-      package_demanifested.writestr(item, buffer)
-  package_original.close()
-  package_demanifested.close()
+  os.system("zip -d {0}/{1} manifest.ini {2}".format(package_path, package_name, silence_output))
+  os.system("mv {0}/{1} {0}/{1}.preprocess".format(package_path, package_name))
 
 
 # Dependent Functions
@@ -173,6 +167,7 @@ def validate_package(package_name):
   log("Validating {0}...".format(package_name), drupal_report = False, log_file = False)
   package_metadata = {'filename': package_name}
   package_errors = []
+  os.system("zip -d {0}/{1} __MACOSX/\* {2}".format(package_path, package_name, silence_output))
   package = zipfile.ZipFile("{0}/{1}".format(package_path, package_name), 'r')
   package_contents = package.namelist()
   if 'manifest.ini' not in package_contents:
