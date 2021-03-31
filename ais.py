@@ -210,17 +210,21 @@ def validate_package(package_name):
           if splitfilename[1]:
             subfolder_files.append(filename)
         elif get_file_extension(filename) == 'xml':
-          xmldata = xml.etree.ElementTree.fromstring(package.read(filename).decode('utf-8')) 
-          iid = False
-          identifiers = xmldata.findall('{http://www.loc.gov/mods/v3}identifier')
-          for identifier in identifiers:
-            if identifier.attrib['type'].lower() == 'iid':
-              iid = identifier.text
-              if iid != get_file_basename(filename):
-                package_errors.append("{0} filename does not match contained IID {1}".format(filename, iid))
-          iid_exempt_cmodels = get_iid_exempt_cmodels()
-          if not iid and package_metadata['content_model'] not in iid_exempt_cmodels:
-            package_errors.append("{0} does not contain an IID".format(filename))
+          try:
+            xmldata = xml.etree.ElementTree.fromstring(package.read(filename).decode('utf-8')) 
+            iid = False
+            identifiers = xmldata.findall('{http://www.loc.gov/mods/v3}identifier')
+            for identifier in identifiers:
+              if identifier.attrib['type'].lower() == 'iid':
+                iid = identifier.text
+                if iid != get_file_basename(filename):
+                  package_errors.append("{0} filename does not match contained IID {1}".format(filename, iid))
+            iid_exempt_cmodels = get_iid_exempt_cmodels()
+            if not iid and package_metadata['content_model'] not in iid_exempt_cmodels:
+              package_errors.append("{0} does not contain an IID".format(filename))
+          except:
+            package_errors.append("Unable to parse {0}, perhaps not UTF8 XML".format(filename))
+          
         else:
           if package_metadata['content_model'] != 'islandora:binaryObjectCModel' and get_file_extension(filename) not in cmodels[package_metadata['content_model']]:
             package_errors.append("{0} does not have an approved file extension for {1} objects".format(filename, package_metadata['content_model']))
@@ -252,45 +256,54 @@ def package_preprocess(package_metadata):
     drushcmd = "drush --root=/var/www/html/ -u {0} ibsp --type=zip --parent={1} --content_models={2} --scan_target={3}/{4}.preprocess 2>&1".format(drupaluid, package_metadata['parent_collection'], package_metadata['content_model'], package_path, package_metadata['filename'])
   drush_preprocess_exec = drush_exec.copy()
   drush_preprocess_exec.append(drushcmd)
-  output = subprocess.check_output(drush_preprocess_exec)
-  output = output.decode('utf-8').strip().split()
-  package_metadata['status'] = 'preprocessed'
-  package_metadata['batch_set_id'] = output[1]
+  try:
+    output = subprocess.check_output(drush_preprocess_exec)
+    output = output.decode('utf-8').strip().split()
+    package_metadata['status'] = 'preprocessed'
+    package_metadata['batch_set_id'] = output[1]
+  except:
+    log("An unrecoverable error occured during preprocessing.", drupal_report = True, log_file = True)
+    package_metadata['status'] = 'failed'
   return package_metadata
 
-def package_process(package_metadata):
-  log("Processing {0}...".format(package_metadata['filename']), drupal_report = False, log_file = False)
-  drushcmd = "drush --root=/var/www/html/ -u 1 ibi --ingest_set={0} 2>&1".format(package_metadata['batch_set_id'])
-  drush_process_exec = drush_exec.copy()
-  drush_process_exec.append(drushcmd)
-  output = subprocess.check_output(drush_process_exec)
-  output = output.decode('utf-8').split('\n')
-  pids = []
-  loginfo = []
-  if output[0].startswith('WD islandora: Failed to ingest object:'):
-    package_metadata['status'] = 'failed'
-    logstring = "\n".join(output)
-    log("{0} failed to ingest, see {1}/error/{0}.log for more information.".format(package_metadata['filename'], s3_path), drupal_report = True, log_file = False)
-    log("{0} failed to ingest with the following errors:\n{1}".format(package_metadata['filename'], logstring), drupal_report = False, log_file = package_metadata['filename'])
-    move_s3_file("s3://{0}/new/{1}".format(s3_path, package_metadata['filename']), "s3://{0}/error/{1}".format(s3_path, package_metadata['filename']))
-    move_s3_file("{0}/{1}.preprocess".format(package_path, package_metadata['filename']), "s3://{0}/error/{1}.preprocess".format(s3_path, package_metadata['filename']))
-    move_s3_file("{0}/{1}.log".format(package_path, package_metadata['filename']), "s3://{0}/error/{1}.log".format(s3_path, package_metadata['filename']))
-  else:
-    for line in output:
-      if line.startswith('Ingested'):
-        pids.append(line.split()[1].rstrip('.'))
-      elif line.startswith('Processing complete;') or line.startswith('information.') or line == '':
-        pass  
+def package_ingest(package_metadata):
+  if package_metadata['status'] != 'failed':
+    log("Processing {0}...".format(package_metadata['filename']), drupal_report = False, log_file = False)
+    drushcmd = "drush --root=/var/www/html/ -u 1 ibi --ingest_set={0} 2>&1".format(package_metadata['batch_set_id'])
+    drush_process_exec = drush_exec.copy()
+    drush_process_exec.append(drushcmd)
+    try:
+      output = subprocess.check_output(drush_process_exec)
+      output = output.decode('utf-8').split('\n')
+      pids = []
+      loginfo = []
+      if output[0].startswith('WD islandora: Failed to ingest object:'):
+        package_metadata['status'] = 'failed'
+        logstring = "\n".join(output)
+        log("{0} failed to ingest, see {1}/error/{0}.log for more information.".format(package_metadata['filename'], s3_path), drupal_report = True, log_file = False)
+        log("{0} failed to ingest with the following errors:\n{1}".format(package_metadata['filename'], logstring), drupal_report = False, log_file = package_metadata['filename'])
+        move_s3_file("s3://{0}/new/{1}".format(s3_path, package_metadata['filename']), "s3://{0}/error/{1}".format(s3_path, package_metadata['filename']))
+        move_s3_file("{0}/{1}.preprocess".format(package_path, package_metadata['filename']), "s3://{0}/error/{1}.preprocess".format(s3_path, package_metadata['filename']))
+        move_s3_file("{0}/{1}.log".format(package_path, package_metadata['filename']), "s3://{0}/error/{1}.log".format(s3_path, package_metadata['filename']))
       else:
-        loginfo.append(line)
-    pidstring = ", ".join(pids)
-    logstring = "\n".join(loginfo)
-    package_metadata['status'] = 'processed'
-    log("{0} processed, produced PIDs: {1}".format(package_metadata['filename'], pidstring), drupal_report = True, log_file = package_metadata['filename'])
-    log("{0} processing produced the following log output:\n{1}".format(package_metadata['filename'], logstring), drupal_report = False, log_file = package_metadata['filename'])
-    move_s3_file("s3://{0}/new/{1}".format(s3_path, package_metadata['filename']), "s3://{0}/done/{1}".format(s3_path, package_metadata['filename']))
-    move_s3_file("{0}/{1}.preprocess".format(package_path, package_metadata['filename']), "s3://{0}/done/{1}.preprocess".format(s3_path, package_metadata['filename']))
-    move_s3_file("{0}/{1}.log".format(package_path, package_metadata['filename']), "s3://{0}/done/{1}.log".format(s3_path, package_metadata['filename']))
+        for line in output:
+          if line.startswith('Ingested'):
+            pids.append(line.split()[1].rstrip('.'))
+          elif line.startswith('Processing complete;') or line.startswith('information.') or line == '':
+            pass  
+          else:
+            loginfo.append(line)
+        pidstring = ", ".join(pids)
+        logstring = "\n".join(loginfo)
+        package_metadata['status'] = 'ingested'
+        log("{0} ingested, produced PIDs: {1}".format(package_metadata['filename'], pidstring), drupal_report = True, log_file = package_metadata['filename'])
+        log("{0} ingestion produced the following log output:\n{1}".format(package_metadata['filename'], logstring), drupal_report = False, log_file = package_metadata['filename'])
+        move_s3_file("s3://{0}/new/{1}".format(s3_path, package_metadata['filename']), "s3://{0}/done/{1}".format(s3_path, package_metadata['filename']))
+        move_s3_file("{0}/{1}.preprocess".format(package_path, package_metadata['filename']), "s3://{0}/done/{1}.preprocess".format(s3_path, package_metadata['filename']))
+        move_s3_file("{0}/{1}.log".format(package_path, package_metadata['filename']), "s3://{0}/done/{1}.log".format(s3_path, package_metadata['filename']))
+    except:
+      log("An unrecoverable error occured during ingestion.", drupal_report = True, log_file = True)
+      package_metadata['status'] = 'failed'
   return package_metadata
 
 def process_available_s3_packages():
@@ -301,7 +314,7 @@ def process_available_s3_packages():
     package_metadata = validate_package(package_name)
     if package_metadata:
       package_metadata = package_preprocess(package_metadata)
-      package_metadata = package_process(package_metadata)
+      package_metadata = package_ingest(package_metadata)
     process_available_s3_packages()
 
 
