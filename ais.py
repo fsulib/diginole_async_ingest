@@ -186,6 +186,7 @@ def validate_package(package_name):
         package_metadata['content_model'] = manifest['package']['content_model']
         if package_metadata['content_model'] not in cmodels.keys():
           package_errors.append("manifest.ini content_model {0} is an invalid content model".format(package_metadata['content_model']))
+          package_metadata['content_model'] = False
       else: 
         package_errors.append('manifest.ini missing content_model')
       if 'parent_collection' not in manifest['package'].keys(): 
@@ -226,7 +227,7 @@ def validate_package(package_name):
             package_errors.append("Unable to parse {0}, perhaps not UTF8 XML".format(filename))
           
         else:
-          if package_metadata['content_model'] != 'islandora:binaryObjectCModel' and get_file_extension(filename) not in cmodels[package_metadata['content_model']]:
+          if package_metadata['content_model'] and package_metadata['content_model'] != 'islandora:binaryObjectCModel' and get_file_extension(filename) not in cmodels[package_metadata['content_model']]:
             package_errors.append("{0} does not have an approved file extension for {1} objects".format(filename, package_metadata['content_model']))
           associated_mods = "{0}.xml".format(get_file_basename(filename))
           if associated_mods not in package_contents:
@@ -261,8 +262,9 @@ def package_preprocess(package_metadata):
     output = output.decode('utf-8').strip().split()
     package_metadata['status'] = 'preprocessed'
     package_metadata['batch_set_id'] = output[1]
+    log("{0} preprocessed, assigned Batch Set ID {1}".format(package_metadata['filename'], package_metadata['batch_set_id']), drupal_report = True, log_file =  package_metadata['filename'])
   except:
-    log("An unrecoverable error occured during preprocessing.", drupal_report = True, log_file = True)
+    log("An unrecoverable error occured during preprocessing.", drupal_report = True, log_file = package_metadata['filename'])
     package_metadata['status'] = 'failed'
   return package_metadata
 
@@ -302,7 +304,7 @@ def package_ingest(package_metadata):
         move_s3_file("{0}/{1}.preprocess".format(package_path, package_metadata['filename']), "s3://{0}/done/{1}.preprocess".format(s3_path, package_metadata['filename']))
         move_s3_file("{0}/{1}.log".format(package_path, package_metadata['filename']), "s3://{0}/done/{1}.log".format(s3_path, package_metadata['filename']))
     except:
-      log("An unrecoverable error occured during ingestion.", drupal_report = True, log_file = True)
+      log("An unrecoverable error occured during ingestion.", drupal_report = True, log_file = package_metadata['filename'])
       package_metadata['status'] = 'failed'
   return package_metadata
 
