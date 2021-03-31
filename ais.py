@@ -20,20 +20,20 @@ s3_bucket = os.getenv('AIS_S3BUCKET')
 s3_path = "{0}/diginole/ais".format(s3_bucket)
 package_path = '/diginole_async_ingest/packages'
 pidfile = "/tmp/ais.pid"
-cmodels = [
-  'islandora:sp_pdf',
-  'ir:thesisCModel',
-  'ir:citationCModel',
-  'islandora:sp_basic_image',
-  'islandora:sp_large_image_cmodel',
-  'islandora:sp-audioCModel',
-  'islandora:sp_videoCModel',
-  'islandora:binaryObjectCModel',
+cmodels = {
+  'islandora:sp_pdf': ['pdf'],
+  'ir:thesisCModel': ['pdf'],
+  'ir:citationCModel': ['pdf'],
+  'islandora:sp_basic_image': ['gif', 'png', 'jpg', 'jpeg', 'tif', 'tiff'],
+  'islandora:sp_large_image_cmodel': ['tif', 'tiff', 'jp2', 'jpg2'],
+  'islandora:sp-audioCModel': ['wav', 'mp3'],
+  'islandora:sp_videoCModel': ['mp4', 'mov', 'qt', 'm4v', 'avi', 'mkv'],
+  'islandora:binaryObjectCModel': [],
   #'islandora:compoundCModel',
   #'islandora:bookCModel',
   #'islandora:newspaperCModel',
   #'islandora:newspaperIssueCModel'
-]
+}
 
 
 # Independent Functions
@@ -178,10 +178,16 @@ def validate_package(package_name):
     if 'package' not in manifest.sections():
       package_errors.append('manifest.ini missing [package] section')
     else:
-      package_metadata['submitter_email'] = manifest['package']['submitter_email'] if 'submitter_email' in manifest['package'].keys() else package_errors.append('manifest.ini missing submitter_email')
-      package_metadata['content_model'] = manifest['package']['content_model'] if 'content_model' in manifest['package'].keys() else package_errors.append('manifest.ini missing content_model')
-      if package_metadata['content_model'] not in cmodels:
-        package_errors.append("manifest.ini content_model {0} is an invalid content model".format(package_metadata['content_model']))
+      if 'submitter_email' in manifest['package'].keys():
+        package_metadata['submitter_email'] = manifest['package']['submitter_email'] 
+      else: 
+        package_errors.append('manifest.ini missing submitter_email')
+      if 'content_model' in manifest['package'].keys():
+        package_metadata['content_model'] = manifest['package']['content_model']
+        if package_metadata['content_model'] not in cmodels.keys():
+          package_errors.append("manifest.ini content_model {0} is an invalid content model".format(package_metadata['content_model']))
+      else: 
+        package_errors.append('manifest.ini missing content_model')
       if 'parent_collection' not in manifest['package'].keys(): 
         package_errors.append('manifest.ini missing parent_collection')
       else: 
@@ -194,31 +200,36 @@ def validate_package(package_name):
         if output[0] != package_metadata['parent_collection']:
           package_errors.append("manifest.ini parent_collection {0} does not exist".format(package_metadata['parent_collection']))
     package_contents.remove('manifest.ini')
-  subfolder_files = []
-  for filename in package_contents:
-    splitfilename = filename.split('/')
-    if len(splitfilename) > 1:
-      if splitfilename[1]:
-        subfolder_files.append(filename)
-    elif get_file_extension(filename) == 'xml':
-      xmldata = xml.etree.ElementTree.fromstring(package.read(filename).decode('utf-8')) 
-      iid = False
-      identifiers = xmldata.findall('{http://www.loc.gov/mods/v3}identifier')
-      for identifier in identifiers:
-        if identifier.attrib['type'].lower() == 'iid':
-          iid = identifier.text
-          if iid != get_file_basename(filename):
-            package_errors.append("{0} filename does not match contained IID {1}".format(filename, iid))
-      iid_exempt_cmodels = get_iid_exempt_cmodels()
-      if not iid and package_metadata['content_model'] not in iid_exempt_cmodels:
-        package_errors.append("{0} does not contain an IID".format(filename))
+    if 'content_model' not in package_metadata.keys(): 
+      package_errors.append("cannot continue with validation due to missing content_model in manifest.ini")
     else:
-      associated_mods = "{0}.xml".format(get_file_basename(filename))
-      if associated_mods not in package_contents:
-        package_errors.append("{0} has no associated MODS record".format(filename))
-  if len(subfolder_files) > 0:
-    joined_subfolder_files = ', '.join(subfolder_files)
-    package_errors.append("package contains files in subdirectories: [{0}]".format(joined_subfolder_files))
+      subfolder_files = []
+      for filename in package_contents:
+        splitfilename = filename.split('/')
+        if len(splitfilename) > 1:
+          if splitfilename[1]:
+            subfolder_files.append(filename)
+        elif get_file_extension(filename) == 'xml':
+          xmldata = xml.etree.ElementTree.fromstring(package.read(filename).decode('utf-8')) 
+          iid = False
+          identifiers = xmldata.findall('{http://www.loc.gov/mods/v3}identifier')
+          for identifier in identifiers:
+            if identifier.attrib['type'].lower() == 'iid':
+              iid = identifier.text
+              if iid != get_file_basename(filename):
+                package_errors.append("{0} filename does not match contained IID {1}".format(filename, iid))
+          iid_exempt_cmodels = get_iid_exempt_cmodels()
+          if not iid and package_metadata['content_model'] not in iid_exempt_cmodels:
+            package_errors.append("{0} does not contain an IID".format(filename))
+        else:
+          if package_metadata['content_model'] != 'islandora:binaryObjectCModel' and get_file_extension(filename) not in cmodels[package_metadata['content_model']]:
+            package_errors.append("{0} does not have an approved file extension for {1} objects".format(filename, package_metadata['content_model']))
+          associated_mods = "{0}.xml".format(get_file_basename(filename))
+          if associated_mods not in package_contents:
+            package_errors.append("{0} has no associated MODS record".format(filename))
+      if len(subfolder_files) > 0:
+        joined_subfolder_files = ', '.join(subfolder_files)
+        package_errors.append("package contains files in subdirectories: [{0}]".format(joined_subfolder_files))
   if len(package_errors) > 0:
     log("Package {0} failed to validate with the following errors: {1}.".format(package_name, ', '.join(package_errors)), drupal_report = True, log_file = package_name)
     move_s3_file("s3://{0}/new/{1}".format(s3_path, package_name), "s3://{0}/error/{1}".format(s3_path, package_name))
