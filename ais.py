@@ -194,8 +194,13 @@ def validate_package(package_name):
         if output[0] != package_metadata['parent_collection']:
           package_errors.append("manifest.ini parent_collection {0} does not exist".format(package_metadata['parent_collection']))
     package_contents.remove('manifest.ini')
+  subfolder_files = []
   for filename in package_contents:
-    if get_file_extension(filename) == 'xml':
+    splitfilename = filename.split('/')
+    if len(splitfilename) > 1:
+      if splitfilename[1]:
+        subfolder_files.append(filename)
+    elif get_file_extension(filename) == 'xml':
       xmldata = xml.etree.ElementTree.fromstring(package.read(filename).decode('utf-8')) 
       iid = False
       identifiers = xmldata.findall('{http://www.loc.gov/mods/v3}identifier')
@@ -211,6 +216,9 @@ def validate_package(package_name):
       associated_mods = "{0}.xml".format(get_file_basename(filename))
       if associated_mods not in package_contents:
         package_errors.append("{0} has no associated MODS record".format(filename))
+  if len(subfolder_files) > 0:
+    joined_subfolder_files = ', '.join(subfolder_files)
+    package_errors.append("package contains files in subdirectories: [{0}]".format(joined_subfolder_files))
   if len(package_errors) > 0:
     log("Package {0} failed to validate with the following errors: {1}.".format(package_name, ', '.join(package_errors)), drupal_report = True, log_file = package_name)
     move_s3_file("s3://{0}/new/{1}".format(s3_path, package_name), "s3://{0}/error/{1}".format(s3_path, package_name))
