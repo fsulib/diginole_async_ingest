@@ -108,9 +108,13 @@ def get_iid_exempt_cmodels():
   output = os.popen(cmdstr).readlines()[0].lstrip('diginole_purlz_exempt_cmodels: ').lstrip("'").rstrip().rstrip("'")
   return output.split(', ')
 
+def set_diginole_ais_log_status(value):
+  os.system("docker exec {0} bash -c 'drush --root=/var/www/html vset diginole_ais_process_status {1}'".format(apache_name, value))
+
 def create_preprocess_package(package_name):
   os.system("zip -d {0}/{1} manifest.ini {2}".format(package_path, package_name, silence_output))
   os.system("mv {0}/{1} {0}/{1}.preprocess".format(package_path, package_name))
+
 
 
 # Dependent Functions
@@ -248,6 +252,7 @@ def validate_package(package_name):
     return package_metadata
 
 def package_preprocess(package_metadata):
+  set_diginole_ais_log_status(package_metadata['filename'])
   log("Preprocessing {0}...".format(package_metadata['filename']), drupal_report = False, log_file = False)
   create_preprocess_package(package_metadata['filename']) 
   drupaluid = get_drupaluid_from_email(package_metadata)
@@ -306,6 +311,7 @@ def package_ingest(package_metadata):
     except:
       log("An unrecoverable error occured during ingestion.", drupal_report = True, log_file = package_metadata['filename'])
       package_metadata['status'] = 'failed'
+  set_diginole_ais_log_status("Inactive")
   return package_metadata
 
 def process_available_s3_packages():
