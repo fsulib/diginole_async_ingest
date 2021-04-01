@@ -47,7 +47,6 @@ def delete_pidfile():
 def check_pidfile():
   if os.path.isfile(pidfile):
     pid = open(pidfile, "r").read().strip()
-    log("Another AIS process (pid:{0}) is currently running.".format(pid), drupal_report = False, log_file = False)
     return pid
   else:
     return False
@@ -55,17 +54,18 @@ def check_pidfile():
 def get_current_time():
   return int(time.time())
 
-def log(message, drupal_report = False, log_file = False):
+def write_to_drupal_log(message):
+  current_time = get_current_time()
+  logcmd = 'docker exec {0} bash -c "drush --root=/var/www/html sql-query \\"insert into diginole_ais_log (time, message) values ({1}, \'{2}\');\\"" {3}'.format(apache_name, current_time, message, silence_output)
+  os.system(logcmd)
+
+def log(message, log_file = False):
   print(message)
-  if drupal_report:
-    current_time = get_current_time()
-    logcmd = 'docker exec {0} bash -c "drush --root=/var/www/html sql-query \\"insert into diginole_ais_log (time, message) values ({1}, \'{2}\');\\"" {3}'.format(apache_name, current_time, message, silence_output)
-    os.system(logcmd)
   if log_file:
     print(message, file=open("{0}/{1}.log".format(package_path, log_file), 'a'))
 
 def move_s3_file(source, destination):
-  log("Moving {0} {1}...".format(source, destination), drupal_report = False, log_file = False)
+  log("Moving {0} to {1}...".format(source, destination), log_file = False)
   os.system('aws s3 mv {0} {1} {2}'.format(source, destination, silence_output))
 
 def check_downloaded_packages():
@@ -90,9 +90,9 @@ def get_drupaluid_from_email(package_metadata):
     if line[0] == package_metadata['submitter_email']:
       uid = line[1]
   if uid:
-    log("{0} manifest.ini submitter email {1} matched to Drupal user {2}.".format(package_metadata['filename'], package_metadata['submitter_email'], uid), drupal_report = False, log_file = package_metadata['filename'])
+    log("{0} manifest.ini submitter email {1} matched to Drupal user {2}.".format(package_metadata['filename'], package_metadata['submitter_email'], uid), log_file = package_metadata['filename'])
   else:
-    log("{0} manifest.ini submitter email {1} could not be matched to an existing Drupal user, submitter will be replaced by admin (UID1) instead.".format(package_metadata['filename'], package_metadata['submitter_email']), drupal_report = True, log_file = package_metadata['filename'])
+    log("{0} manifest.ini submitter email {1} could not be matched to an existing Drupal user, submitter will be replaced by admin (UID1) instead.".format(package_metadata['filename'], package_metadata['submitter_email']), log_file = package_metadata['filename'])
     uid = 1
   return uid
 
@@ -102,7 +102,10 @@ def get_iid_exempt_cmodels():
   return output.split(', ')
 
 def set_diginole_ais_log_status(value):
-  os.system("docker exec {0} bash -c 'drush --root=/var/www/html vset diginole_ais_process_status {1}'".format(apache_name, value))
+  drushcmd = "drush --root=/var/www/html vset diginole_ais_process_status {1} {2}".format(apache_name, value, silence_output)
+  drush_vset = drush_exec.copy()
+  drush_vset.append(drushcmd)
+  output = subprocess.check_output(drush_vset)
 
 def create_preprocess_package(package_name):
   os.system("zip -d {0}/{1} manifest.ini {2}".format(package_path, package_name, silence_output))
@@ -134,7 +137,8 @@ def list_new_packages():
       if package_age > s3_wait:
         package_extension = get_file_extension(package_name) 
         if package_extension != 'zip':
-          log("New package {0}/new/{1} detected, but is not a zip file. Package moved to {0}/error/{1}.".format(s3_path, package_name), drupal_report = True, log_file = package_name)
+          # TODO needs diginole_ais_log
+          log("New package {0}/new/{1} detected, but is not a zip file. Package moved to {0}/error/{1}.".format(s3_path, package_name), log_file = package_name)
           move_s3_file("s3://{0}/new/{1}".format(s3_path, package_name), "s3://{0}/error/{1}".format(s3_path, package_name))
           move_s3_file("{0}/{1}.log".format(package_path, package_name), "s3://{0}/error/{1}.log".format(s3_path, package_name))
         else:
@@ -156,7 +160,7 @@ def download_oldest_new_package():
   oldest_new_package = packages[0]
   oldest_new_package_name = oldest_new_package[1]
   os.system('aws s3 cp s3://{0}/new/{1} {2}/{1} {3}'.format(s3_path, oldest_new_package_name, package_path, silence_output))
-  log("New package {0}/new/{1} detected and downloaded to {2}/{1}.".format(s3_path, oldest_new_package_name, package_path), drupal_report = True, log_file = oldest_new_package_name)
+  log("New package {0}/new/{1} detected and downloaded to {2}/{1}.".format(s3_path, oldest_new_package_name, package_path), log_file = oldest_new_package_name)
   return oldest_new_package_name
 
 def validate_package(package_name):
@@ -231,15 +235,15 @@ def validate_package(package_name):
         joined_subfolder_files = ', '.join(subfolder_files)
         package_errors.append("package contains files in subdirectories: [{0}]".format(joined_subfolder_files))
   if len(package_errors) > 0:
-    log("Package {0} failed to validate with the following errors: {1}.".format(package_name, ', '.join(package_errors)), drupal_report = True, log_file = package_name)
+    # TODO needs diginole_ais_log
+    log("Package {0} failed to validate with the following errors: {1}.".format(package_name, ', '.join(package_errors)), log_file = package_name)
     move_s3_file("s3://{0}/new/{1}".format(s3_path, package_name), "s3://{0}/error/{1}".format(s3_path, package_name))
     move_s3_file("{0}/{1}.log".format(package_path, package_name), "s3://{0}/error/{1}.log".format(s3_path, package_name))
     os.system("rm {0}/{1} {2}".format(package_path, package_name, silence_output))
-    log("{0} and {0}.log have been moved to {1}/error/.".format(package_name, s3_path), drupal_report = True, log_file = False)
     return False
   else:
     package_metadata['status'] = 'validated'
-    log("Package {0} passed validation check.".format(package_name), drupal_report = True, log_file = package_name)
+    log("Package {0} passed validation check.".format(package_name), log_file = package_name)
     return package_metadata
 
 def package_preprocess(package_metadata):
@@ -257,10 +261,12 @@ def package_preprocess(package_metadata):
     output = output.decode('utf-8').strip().split()
     package_metadata['status'] = 'preprocessed'
     package_metadata['batch_set_id'] = output[1]
-    log("{0} preprocessed, assigned Batch Set ID {1}".format(package_metadata['filename'], package_metadata['batch_set_id']), drupal_report = True, log_file =  package_metadata['filename'])
+    log("{0} preprocessed, assigned Batch Set ID {1}".format(package_metadata['filename'], package_metadata['batch_set_id']), log_file =  package_metadata['filename'])
   except:
-    log("An unrecoverable error occured during preprocessing.", drupal_report = True, log_file = package_metadata['filename'])
+    # TODO needs diginole_ais_log
+    log("An unrecoverable error occured during preprocessing.", log_file = package_metadata['filename'])
     package_metadata['status'] = 'failed'
+    # TODO move files to error
   return package_metadata
 
 def package_ingest(package_metadata):
@@ -276,8 +282,8 @@ def package_ingest(package_metadata):
       if output[0].startswith('WD islandora: Failed to ingest object:'):
         package_metadata['status'] = 'failed'
         logstring = "\n".join(output)
-        log("{0} failed to ingest, see {1}/error/{0}.log for more information.".format(package_metadata['filename'], s3_path), drupal_report = True, log_file = False)
-        log("{0} failed to ingest with the following errors:\n{1}".format(package_metadata['filename'], logstring), drupal_report = False, log_file = package_metadata['filename'])
+        log("{0} failed to ingest with the following errors:\n{1}".format(package_metadata['filename'], logstring), log_file = package_metadata['filename'])
+        # TODO needs diginole_ais_log
         move_s3_file("s3://{0}/new/{1}".format(s3_path, package_metadata['filename']), "s3://{0}/error/{1}".format(s3_path, package_metadata['filename']))
         move_s3_file("{0}/{1}.preprocess".format(package_path, package_metadata['filename']), "s3://{0}/error/{1}.preprocess".format(s3_path, package_metadata['filename']))
         move_s3_file("{0}/{1}.log".format(package_path, package_metadata['filename']), "s3://{0}/error/{1}.log".format(s3_path, package_metadata['filename']))
@@ -292,19 +298,24 @@ def package_ingest(package_metadata):
         pidstring = ", ".join(pids)
         logstring = "\n".join(loginfo)
         package_metadata['status'] = 'ingested'
-        log("{0} ingested, produced PIDs: {1}".format(package_metadata['filename'], pidstring), drupal_report = True, log_file = package_metadata['filename'])
-        log("{0} ingestion produced the following log output:\n{1}".format(package_metadata['filename'], logstring), drupal_report = False, log_file = package_metadata['filename'])
+        # TODO needs diginole_ais_log
+        log("{0} ingested, produced PIDs: {1}".format(package_metadata['filename'], pidstring), log_file = package_metadata['filename'])
+        log("{0} ingestion produced the following log output:\n{1}".format(package_metadata['filename'], logstring), log_file = package_metadata['filename'])
         move_s3_file("s3://{0}/new/{1}".format(s3_path, package_metadata['filename']), "s3://{0}/done/{1}".format(s3_path, package_metadata['filename']))
         move_s3_file("{0}/{1}.preprocess".format(package_path, package_metadata['filename']), "s3://{0}/done/{1}.preprocess".format(s3_path, package_metadata['filename']))
         move_s3_file("{0}/{1}.log".format(package_path, package_metadata['filename']), "s3://{0}/done/{1}.log".format(s3_path, package_metadata['filename']))
     except:
-      log("An unrecoverable error occured during ingestion.", drupal_report = True, log_file = package_metadata['filename'])
+      # TODO needs diginole_ais_log
+      log("An unrecoverable error occured during ingestion.", log_file = package_metadata['filename'])
       package_metadata['status'] = 'failed'
+      # TODO move files to error
   set_diginole_ais_log_status("Inactive")
   return package_metadata
 
 def process_available_s3_packages():
-  if check_new_packages():
+  if not check_new_packages():
+    log("No new packages detected in {0}/new/.".format(s3_path), log_file = False)
+  else:
     package_name = download_oldest_new_package()
     package_metadata = validate_package(package_name)
     if package_metadata:
@@ -315,10 +326,10 @@ def process_available_s3_packages():
 
 # Main function
 def run():
-  timestamp = os.popen('date').read().strip()
-  log(">>>{0}: AIS triggered.".format(timestamp), drupal_report = False, log_file = False)
   pid = check_pidfile()
-  if not pid:
+  if pid:
+    log("AIS triggered, but another AIS process is already running. Halting execution.", log_file = False)
+  else:
     write_pidfile()
     process_available_s3_packages()
     delete_pidfile()
