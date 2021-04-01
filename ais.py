@@ -316,7 +316,7 @@ def process_available_s3_packages():
 # Main function
 def run():
   timestamp = os.popen('date').read().strip()
-  log("{0}: AIS triggered.".format(timestamp), drupal_report = False, log_file = False)
+  log(">>>{0}: AIS triggered.".format(timestamp), drupal_report = False, log_file = False)
   pid = check_pidfile()
   if not pid:
     write_pidfile()
