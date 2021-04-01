@@ -45,13 +45,11 @@ def delete_pidfile():
   os.system("rm {0}".format(pidfile))
   
 def check_pidfile():
-  log("Checking to see if any other AIS processes are currently running...", drupal_report = False, log_file = False)
   if os.path.isfile(pidfile):
     pid = open(pidfile, "r").read().strip()
     log("Another AIS process (pid:{0}) is currently running.".format(pid), drupal_report = False, log_file = False)
     return pid
   else:
-    log("No other AIS processes detected.", drupal_report = False, log_file = False)
     return False
 
 def get_current_time():
@@ -152,7 +150,6 @@ def list_new_packages():
   return sorted_packages_list
 
 def check_new_packages():
-  log("Checking for new packages to download...", drupal_report = False, log_file = False)
   packages = list_new_packages()
   if len(packages) > 0:
     return True
@@ -315,9 +312,7 @@ def package_ingest(package_metadata):
   return package_metadata
 
 def process_available_s3_packages():
-  if not check_new_packages():
-    log("No new packages detected in {0}/new/.".format(s3_path), drupal_report = False, log_file = False)
-  else:
+  if check_new_packages():
     package_name = download_oldest_new_package()
     package_metadata = validate_package(package_name)
     if package_metadata:
@@ -328,12 +323,10 @@ def process_available_s3_packages():
 
 # Main function
 def run():
-  log("Executing main AIS process...", drupal_report = False, log_file = False)
+  timestamp = os.popen('date').read().strip()
+  log("{0}: AIS triggered.".format(timestamp), drupal_report = False, log_file = False)
   pid = check_pidfile()
-  if pid:
-    log("Halting to allow original AIS process to continue.", drupal_report = False, log_file = False)
-  else:
+  if not pid:
     write_pidfile()
     process_available_s3_packages()
     delete_pidfile()
-  log("AIS main process completed.", drupal_report = False, log_file = False)
