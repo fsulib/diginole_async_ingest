@@ -68,10 +68,6 @@ def move_s3_file(source, destination):
   log("Moving {0} {1}...".format(source, destination), drupal_report = False, log_file = False)
   os.system('aws s3 mv {0} {1} {2}'.format(source, destination, silence_output))
 
-def delete_downloaded_package(package):
-  log("Deleting {0}/{1}...".format(package_path, package), drupal_report = False, log_file = package)
-  os.remove("{0}/{1}".format(package_path, package))
-
 def check_downloaded_packages():
   downloaded_packages = glob.glob("{0}/*.zip".format(package_path))
   if len(downloaded_packages) > 0:
@@ -86,7 +82,6 @@ def get_file_basename(filename):
   return filename.rpartition('.')[0]
 
 def get_drupaluid_from_email(package_metadata):
-  log("Getting Drupal user ID for submitter...", drupal_report = False, log_file = False) 
   cmd = "docker exec {0} bash -c 'drush --root=/var/www/html sql-query \"select mail, uid from users;\"'".format(apache_name)
   output = os.popen(cmd).readlines()
   uid = False
@@ -165,7 +160,6 @@ def download_oldest_new_package():
   return oldest_new_package_name
 
 def validate_package(package_name):
-  log("Validating {0}...".format(package_name), drupal_report = False, log_file = False)
   package_metadata = {'filename': package_name}
   package_errors = []
   os.system("zip -d {0}/{1} __MACOSX/\* {2}".format(package_path, package_name, silence_output))
@@ -250,7 +244,6 @@ def validate_package(package_name):
 
 def package_preprocess(package_metadata):
   set_diginole_ais_log_status(package_metadata['filename'])
-  log("Preprocessing {0}...".format(package_metadata['filename']), drupal_report = False, log_file = False)
   create_preprocess_package(package_metadata['filename']) 
   drupaluid = get_drupaluid_from_email(package_metadata)
   if package_metadata['content_model'] == 'islandora:binaryObjectCModel':
@@ -272,7 +265,6 @@ def package_preprocess(package_metadata):
 
 def package_ingest(package_metadata):
   if package_metadata['status'] != 'failed':
-    log("Processing {0}...".format(package_metadata['filename']), drupal_report = False, log_file = False)
     drushcmd = "drush --root=/var/www/html/ -u 1 ibi --ingest_set={0} 2>&1".format(package_metadata['batch_set_id'])
     drush_process_exec = drush_exec.copy()
     drush_process_exec.append(drushcmd)
