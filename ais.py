@@ -6,6 +6,7 @@ import glob
 import json
 import os
 import subprocess
+import sys
 import time
 import xml.etree.ElementTree
 import zipfile
@@ -223,8 +224,8 @@ def validate_package(package_name):
             if not iid and package_metadata['content_model'] not in iid_exempt_cmodels:
               package_errors.append("{0} does not contain an IID".format(filename))
           except:
-            package_errors.append("Unable to parse {0}, perhaps not UTF8 XML".format(filename))
-          
+            package_errors.append("Caught exception while attempting to parse {0} (see log file for body of exception)".format(filename))
+            exception_error = {'filename': filename, 'exception': sys.exc_info()}
         else:
           if package_metadata['content_model'] and package_metadata['content_model'] != 'islandora:binaryObjectCModel' and get_file_extension(filename) not in cmodels[package_metadata['content_model']]:
             package_errors.append("{0} does not have an approved file extension for {1} objects".format(filename, package_metadata['content_model']))
@@ -237,6 +238,8 @@ def validate_package(package_name):
   if len(package_errors) > 0:
     # TODO needs diginole_ais_log
     log("Package {0} failed to validate with the following errors: {1}.".format(package_name, ', '.join(package_errors)), log_file = package_name)
+    if exception_error:
+      log("Exception caught while attempting to parse {0}: {1}.".format(exception_error['filename'], exception_error['exception']), log_file = package_name)
     move_s3_file("s3://{0}/new/{1}".format(s3_path, package_name), "s3://{0}/error/{1}".format(s3_path, package_name))
     move_s3_file("{0}/{1}.log".format(package_path, package_name), "s3://{0}/error/{1}.log".format(s3_path, package_name))
     os.system("rm {0}/{1} {2}".format(package_path, package_name, silence_output))
@@ -263,10 +266,12 @@ def package_preprocess(package_metadata):
     package_metadata['batch_set_id'] = output[1]
     log("{0} preprocessed, assigned Batch Set ID {1}".format(package_metadata['filename'], package_metadata['batch_set_id']), log_file =  package_metadata['filename'])
   except:
-    # TODO needs diginole_ais_log
-    log("An unrecoverable error occured during preprocessing.", log_file = package_metadata['filename'])
     package_metadata['status'] = 'failed'
-    # TODO move files to error
+    # TODO needs diginole_ais_log
+    log("Exception caught during preprocessing, {0}.preprocess failed with {1}".format(package_metadata['filename'], sys.exc_info()), log_file = package_metadata['filename'])
+    move_s3_file("s3://{0}/new/{1}".format(s3_path, package_metadata['filename']), "s3://{0}/error/{1}".format(s3_path, package_metadata['filename']))
+    move_s3_file("{0}/{1}.preprocess".format(package_path, package_metadata['filename']), "s3://{0}/error/{1}.preprocess".format(s3_path, package_metadata['filename']))
+    move_s3_file("{0}/{1}.log".format(package_path, package_metadata['filename']), "s3://{0}/error/{1}.log".format(s3_path, package_metadata['filename']))
   return package_metadata
 
 def package_ingest(package_metadata):
@@ -305,10 +310,12 @@ def package_ingest(package_metadata):
         move_s3_file("{0}/{1}.preprocess".format(package_path, package_metadata['filename']), "s3://{0}/done/{1}.preprocess".format(s3_path, package_metadata['filename']))
         move_s3_file("{0}/{1}.log".format(package_path, package_metadata['filename']), "s3://{0}/done/{1}.log".format(s3_path, package_metadata['filename']))
     except:
-      # TODO needs diginole_ais_log
-      log("An unrecoverable error occured during ingestion.", log_file = package_metadata['filename'])
       package_metadata['status'] = 'failed'
-      # TODO move files to error
+      # TODO needs diginole_ais_log
+      log("Exception caught during ingestion, Batch Set {0} failed with {1}".format(package_metadata['batch_set_id'], sys.exc_info()), log_file = package_metadata['filename'])
+      move_s3_file("s3://{0}/new/{1}".format(s3_path, package_metadata['filename']), "s3://{0}/error/{1}".format(s3_path, package_metadata['filename']))
+      move_s3_file("{0}/{1}.preprocess".format(package_path, package_metadata['filename']), "s3://{0}/error/{1}.preprocess".format(s3_path, package_metadata['filename']))
+      move_s3_file("{0}/{1}.log".format(package_path, package_metadata['filename']), "s3://{0}/error/{1}.log".format(s3_path, package_metadata['filename']))
   set_diginole_ais_log_status("Inactive")
   return package_metadata
 
@@ -326,9 +333,10 @@ def process_available_s3_packages():
 
 # Main function
 def run():
+  log("AIS triggered.", log_file = False)
   pid = check_pidfile()
   if pid:
-    log("AIS triggered, but another AIS process is already running. Halting execution.", log_file = False)
+    log("Another AIS process is already running. Halting execution.", log_file = False)
   else:
     write_pidfile()
     process_available_s3_packages()
