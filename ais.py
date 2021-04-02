@@ -66,7 +66,6 @@ def log(message, log_file = False):
     print(message, file=open("{0}/{1}.log".format(package_path, log_file), 'a'))
 
 def move_s3_file(source, destination):
-  log("Moving {0} to {1}...".format(source, destination), log_file = False)
   os.system('aws s3 mv {0} {1} {2}'.format(source, destination, silence_output))
 
 def check_downloaded_packages():
@@ -138,9 +137,10 @@ def list_new_packages():
       if package_age > s3_wait:
         package_extension = get_file_extension(package_name) 
         if package_extension != 'zip':
-          log("New package {0}/new/{1} detected, but is not a zip file. Package moved to {0}/error/{1}.".format(s3_path, package_name), log_file = package_name)
+          log("New package {0}/new/{1} detected, but is not a zip archive.".format(s3_path, package_name), log_file = package_name)
           move_s3_file("s3://{0}/new/{1}".format(s3_path, package_name), "s3://{0}/error/{1}".format(s3_path, package_name))
           move_s3_file("{0}/{1}.log".format(package_path, package_name), "s3://{0}/error/{1}.log".format(s3_path, package_name))
+          log("Package and log data moved to s3://{0}/error/.".format(s3_path), log_file = False)
           write_to_drupal_log(current_time, current_time, package_name, 'Invalid', "{0} is not a zip archive; AIS packages must be zip archives.".format(package_name))
         else:
           package_key = str(package_mod_timestamp)
@@ -246,6 +246,7 @@ def validate_package(package_name):
     move_s3_file("s3://{0}/new/{1}".format(s3_path, package_name), "s3://{0}/error/{1}".format(s3_path, package_name))
     move_s3_file("{0}/{1}.log".format(package_path, package_name), "s3://{0}/error/{1}.log".format(s3_path, package_name))
     os.system("rm {0}/{1} {2}".format(package_path, package_name, silence_output))
+    log("Package and log data moved to s3://{0}/error/.".format(s3_path), log_file = False)
     package_metadata['stop_time'] = get_current_time()
     write_to_drupal_log(package_metadata['start_time'], package_metadata['stop_time'], package_metadata['filename'], 'Invalid', invalid_logmsg)
     set_diginole_ais_log_status("Inactive")
@@ -276,6 +277,7 @@ def package_preprocess(package_metadata):
     move_s3_file("s3://{0}/new/{1}".format(s3_path, package_metadata['filename']), "s3://{0}/error/{1}".format(s3_path, package_metadata['filename']))
     move_s3_file("{0}/{1}.preprocess".format(package_path, package_metadata['filename']), "s3://{0}/error/{1}.preprocess".format(s3_path, package_metadata['filename']))
     move_s3_file("{0}/{1}.log".format(package_path, package_metadata['filename']), "s3://{0}/error/{1}.log".format(s3_path, package_metadata['filename']))
+    log("Package and log data moved to s3://{0}/error/.".format(s3_path), log_file = False)
     package_metadata['stop_time'] = get_current_time()
     write_to_drupal_log(package_metadata['start_time'], package_metadata['stop_time'], package_metadata['filename'], 'Error', "Error encountered during preprocessing, see s3://{0}/error/{1}.log for full error output.".format(s3_path, package_metadata['filename']))
     set_diginole_ais_log_status("Inactive")
@@ -298,6 +300,7 @@ def package_ingest(package_metadata):
         move_s3_file("s3://{0}/new/{1}".format(s3_path, package_metadata['filename']), "s3://{0}/error/{1}".format(s3_path, package_metadata['filename']))
         move_s3_file("{0}/{1}.preprocess".format(package_path, package_metadata['filename']), "s3://{0}/error/{1}.preprocess".format(s3_path, package_metadata['filename']))
         move_s3_file("{0}/{1}.log".format(package_path, package_metadata['filename']), "s3://{0}/error/{1}.log".format(s3_path, package_metadata['filename']))
+        log("Package and log data moved to s3://{0}/error/.".format(s3_path), log_file = False)
         package_metadata['stop_time'] = get_current_time()
         write_to_drupal_log(package_metadata['start_time'], package_metadata['stop_time'], package_metadata['filename'], 'Error', "Error encountered during ingestion, see s3://{0}/error/{1}.log for full error output.".format(s3_path, package_metadata['filename']))
         set_diginole_ais_log_status("Inactive")
@@ -317,6 +320,7 @@ def package_ingest(package_metadata):
         move_s3_file("s3://{0}/new/{1}".format(s3_path, package_metadata['filename']), "s3://{0}/done/{1}".format(s3_path, package_metadata['filename']))
         move_s3_file("{0}/{1}.preprocess".format(package_path, package_metadata['filename']), "s3://{0}/done/{1}.preprocess".format(s3_path, package_metadata['filename']))
         move_s3_file("{0}/{1}.log".format(package_path, package_metadata['filename']), "s3://{0}/done/{1}.log".format(s3_path, package_metadata['filename']))
+        log("Package and log data moved to s3://{0}/done/.".format(s3_path), log_file = False)
         package_metadata['stop_time'] = get_current_time()
         write_to_drupal_log(package_metadata['start_time'], package_metadata['stop_time'], package_metadata['filename'], 'Success', pidstring)
         set_diginole_ais_log_status("Inactive")
@@ -326,6 +330,7 @@ def package_ingest(package_metadata):
       move_s3_file("s3://{0}/new/{1}".format(s3_path, package_metadata['filename']), "s3://{0}/error/{1}".format(s3_path, package_metadata['filename']))
       move_s3_file("{0}/{1}.preprocess".format(package_path, package_metadata['filename']), "s3://{0}/error/{1}.preprocess".format(s3_path, package_metadata['filename']))
       move_s3_file("{0}/{1}.log".format(package_path, package_metadata['filename']), "s3://{0}/error/{1}.log".format(s3_path, package_metadata['filename']))
+      log("Package and log data moved to s3://{0}/error/.".format(s3_path), log_file = False)
       package_metadata['stop_time'] = get_current_time()
       write_to_drupal_log(package_metadata['start_time'], package_metadata['stop_time'], package_metadata['filename'], 'Error', "Error encountered during ingestion, see s3://{0}/error/{1}.log for full error output.".format(s3_path, package_metadata['filename']))
       set_diginole_ais_log_status("Inactive")
