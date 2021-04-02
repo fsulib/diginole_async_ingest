@@ -55,9 +55,9 @@ def check_pidfile():
 def get_current_time():
   return int(time.time())
 
-def write_to_drupal_log(message):
+def write_to_drupal_log(start_time, stop_time, package_name, package_status, message):
   current_time = get_current_time()
-  logcmd = 'docker exec {0} bash -c "drush --root=/var/www/html sql-query \\"insert into diginole_ais_log (time, message) values ({1}, \'{2}\');\\"" {3}'.format(apache_name, current_time, message, silence_output)
+  logcmd = 'docker exec {0} bash -c "drush --root=/var/www/html sql-query \\"insert into diginole_ais_log (start, stop, package, status, message) values ({1}, {2}, \'{3}\', \'{4}\', \'{5}\');\\"" {6}'.format(apache_name, start_time, stop_time, package_name, package_status, message, silence_output)
   os.system(logcmd)
 
 def log(message, log_file = False):
@@ -138,10 +138,10 @@ def list_new_packages():
       if package_age > s3_wait:
         package_extension = get_file_extension(package_name) 
         if package_extension != 'zip':
-          # TODO needs diginole_ais_log
           log("New package {0}/new/{1} detected, but is not a zip file. Package moved to {0}/error/{1}.".format(s3_path, package_name), log_file = package_name)
           move_s3_file("s3://{0}/new/{1}".format(s3_path, package_name), "s3://{0}/error/{1}".format(s3_path, package_name))
           move_s3_file("{0}/{1}.log".format(package_path, package_name), "s3://{0}/error/{1}.log".format(s3_path, package_name))
+          write_to_drupal_log(current_time, current_time, package_name, 'Invalid', "{0} is not a zip archive; AIS packages must be zip archives.".format(package_name))
         else:
           package_key = str(package_mod_timestamp)
           packages[package_key] = package_name
@@ -165,8 +165,11 @@ def download_oldest_new_package():
   return oldest_new_package_name
 
 def validate_package(package_name):
+  set_diginole_ais_log_status(package_name)
   package_metadata = {'filename': package_name}
+  package_metadata['start_time'] = get_current_time()
   package_errors = []
+  exception_error = False 
   os.system("zip -d {0}/{1} __MACOSX/\* {2}".format(package_path, package_name, silence_output))
   package = zipfile.ZipFile("{0}/{1}".format(package_path, package_name), 'r')
   package_contents = package.namelist()
@@ -224,7 +227,7 @@ def validate_package(package_name):
             if not iid and package_metadata['content_model'] not in iid_exempt_cmodels:
               package_errors.append("{0} does not contain an IID".format(filename))
           except:
-            package_errors.append("Caught exception while attempting to parse {0} (see log file for body of exception)".format(filename))
+            package_errors.append("Error while attempting to parse {0} (see s3://{1}/error/{2}.log for full error output)".format(filename, s3_path, package_metadata['filename']))
             exception_error = {'filename': filename, 'exception': sys.exc_info()}
         else:
           if package_metadata['content_model'] and package_metadata['content_model'] != 'islandora:binaryObjectCModel' and get_file_extension(filename) not in cmodels[package_metadata['content_model']]:
@@ -236,13 +239,16 @@ def validate_package(package_name):
         joined_subfolder_files = ', '.join(subfolder_files)
         package_errors.append("package contains files in subdirectories: [{0}]".format(joined_subfolder_files))
   if len(package_errors) > 0:
-    # TODO needs diginole_ais_log
-    log("Package {0} failed to validate with the following errors: {1}.".format(package_name, ', '.join(package_errors)), log_file = package_name)
+    invalid_logmsg = "Package {0} failed to validate with the following errors: {1}.".format(package_name, ', '.join(package_errors))
+    log(invalid_logmsg, log_file = package_name)
     if exception_error:
-      log("Exception caught while attempting to parse {0}: {1}.".format(exception_error['filename'], exception_error['exception']), log_file = package_name)
+      log("Error while attempting to parse {0}: {1}.".format(exception_error['filename'], exception_error['exception']), log_file = package_name)
     move_s3_file("s3://{0}/new/{1}".format(s3_path, package_name), "s3://{0}/error/{1}".format(s3_path, package_name))
     move_s3_file("{0}/{1}.log".format(package_path, package_name), "s3://{0}/error/{1}.log".format(s3_path, package_name))
     os.system("rm {0}/{1} {2}".format(package_path, package_name, silence_output))
+    package_metadata['stop_time'] = get_current_time()
+    write_to_drupal_log(package_metadata['start_time'], package_metadata['stop_time'], package_metadata['filename'], 'Invalid', invalid_logmsg)
+    set_diginole_ais_log_status("Inactive")
     return False
   else:
     package_metadata['status'] = 'validated'
@@ -250,7 +256,6 @@ def validate_package(package_name):
     return package_metadata
 
 def package_preprocess(package_metadata):
-  set_diginole_ais_log_status(package_metadata['filename'])
   create_preprocess_package(package_metadata['filename']) 
   drupaluid = get_drupaluid_from_email(package_metadata)
   if package_metadata['content_model'] == 'islandora:binaryObjectCModel':
@@ -267,11 +272,13 @@ def package_preprocess(package_metadata):
     log("{0} preprocessed, assigned Batch Set ID {1}".format(package_metadata['filename'], package_metadata['batch_set_id']), log_file =  package_metadata['filename'])
   except:
     package_metadata['status'] = 'failed'
-    # TODO needs diginole_ais_log
     log("Exception caught during preprocessing, {0}.preprocess failed with {1}".format(package_metadata['filename'], sys.exc_info()), log_file = package_metadata['filename'])
     move_s3_file("s3://{0}/new/{1}".format(s3_path, package_metadata['filename']), "s3://{0}/error/{1}".format(s3_path, package_metadata['filename']))
     move_s3_file("{0}/{1}.preprocess".format(package_path, package_metadata['filename']), "s3://{0}/error/{1}.preprocess".format(s3_path, package_metadata['filename']))
     move_s3_file("{0}/{1}.log".format(package_path, package_metadata['filename']), "s3://{0}/error/{1}.log".format(s3_path, package_metadata['filename']))
+    package_metadata['stop_time'] = get_current_time()
+    write_to_drupal_log(package_metadata['start_time'], package_metadata['stop_time'], package_metadata['filename'], 'Error', "Error encountered during preprocessing, see s3://{0}/error/{1}.log for full error output.".format(s3_path, package_metadata['filename']))
+    set_diginole_ais_log_status("Inactive")
   return package_metadata
 
 def package_ingest(package_metadata):
@@ -288,10 +295,12 @@ def package_ingest(package_metadata):
         package_metadata['status'] = 'failed'
         logstring = "\n".join(output)
         log("{0} failed to ingest with the following errors:\n{1}".format(package_metadata['filename'], logstring), log_file = package_metadata['filename'])
-        # TODO needs diginole_ais_log
         move_s3_file("s3://{0}/new/{1}".format(s3_path, package_metadata['filename']), "s3://{0}/error/{1}".format(s3_path, package_metadata['filename']))
         move_s3_file("{0}/{1}.preprocess".format(package_path, package_metadata['filename']), "s3://{0}/error/{1}.preprocess".format(s3_path, package_metadata['filename']))
         move_s3_file("{0}/{1}.log".format(package_path, package_metadata['filename']), "s3://{0}/error/{1}.log".format(s3_path, package_metadata['filename']))
+        package_metadata['stop_time'] = get_current_time()
+        write_to_drupal_log(package_metadata['start_time'], package_metadata['stop_time'], package_metadata['filename'], 'Error', "Error encountered during ingestion, see s3://{0}/error/{1}.log for full error output.".format(s3_path, package_metadata['filename']))
+        set_diginole_ais_log_status("Inactive")
       else:
         for line in output:
           if line.startswith('Ingested'):
@@ -303,20 +312,23 @@ def package_ingest(package_metadata):
         pidstring = ", ".join(pids)
         logstring = "\n".join(loginfo)
         package_metadata['status'] = 'ingested'
-        # TODO needs diginole_ais_log
         log("{0} ingested, produced PIDs: {1}".format(package_metadata['filename'], pidstring), log_file = package_metadata['filename'])
         log("{0} ingestion produced the following log output:\n{1}".format(package_metadata['filename'], logstring), log_file = package_metadata['filename'])
         move_s3_file("s3://{0}/new/{1}".format(s3_path, package_metadata['filename']), "s3://{0}/done/{1}".format(s3_path, package_metadata['filename']))
         move_s3_file("{0}/{1}.preprocess".format(package_path, package_metadata['filename']), "s3://{0}/done/{1}.preprocess".format(s3_path, package_metadata['filename']))
         move_s3_file("{0}/{1}.log".format(package_path, package_metadata['filename']), "s3://{0}/done/{1}.log".format(s3_path, package_metadata['filename']))
+        package_metadata['stop_time'] = get_current_time()
+        write_to_drupal_log(package_metadata['start_time'], package_metadata['stop_time'], package_metadata['filename'], 'Success', pidstring)
+        set_diginole_ais_log_status("Inactive")
     except:
       package_metadata['status'] = 'failed'
-      # TODO needs diginole_ais_log
       log("Exception caught during ingestion, Batch Set {0} failed with {1}".format(package_metadata['batch_set_id'], sys.exc_info()), log_file = package_metadata['filename'])
       move_s3_file("s3://{0}/new/{1}".format(s3_path, package_metadata['filename']), "s3://{0}/error/{1}".format(s3_path, package_metadata['filename']))
       move_s3_file("{0}/{1}.preprocess".format(package_path, package_metadata['filename']), "s3://{0}/error/{1}.preprocess".format(s3_path, package_metadata['filename']))
       move_s3_file("{0}/{1}.log".format(package_path, package_metadata['filename']), "s3://{0}/error/{1}.log".format(s3_path, package_metadata['filename']))
-  set_diginole_ais_log_status("Inactive")
+      package_metadata['stop_time'] = get_current_time()
+      write_to_drupal_log(package_metadata['start_time'], package_metadata['stop_time'], package_metadata['filename'], 'Error', "Error encountered during ingestion, see s3://{0}/error/{1}.log for full error output.".format(s3_path, package_metadata['filename']))
+      set_diginole_ais_log_status("Inactive")
   return package_metadata
 
 def process_available_s3_packages():
