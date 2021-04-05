@@ -1,4 +1,5 @@
 # Imports
+
 import collections
 import configparser
 import datetime
@@ -30,7 +31,7 @@ cmodels = {
   'islandora:sp-audioCModel': ['wav', 'mp3'],
   'islandora:sp_videoCModel': ['mp4', 'mov', 'qt', 'm4v', 'avi', 'mkv'],
   'islandora:binaryObjectCModel': [],
-  'islandora:bookCModel',
+  'islandora:bookCModel': [],
   #'islandora:newspaperCModel',
   #'islandora:newspaperIssueCModel',
   #'islandora:compoundCModel',
@@ -112,9 +113,18 @@ def check_if_iid_exists_elsewhere(iid):
   output = json.loads(os.popen(drushcmd).read())
   return output
 
-def create_preprocess_package(package_name):
-  os.system("zip -d {0}/{1} manifest.ini {2}".format(package_path, package_name, silence_output))
-  os.system("mv {0}/{1} {0}/{1}.preprocess".format(package_path, package_name))
+def create_preprocess_package(package_metadata):
+  os.system("zip -d {0}/{1} manifest.ini {2}".format(package_path, package_metadata['filename'], silence_output))
+  os.system("mv {0}/{1} {0}/{1}.preprocess".format(package_path, package_metadata['filename']))
+  if package_metadata['content_model'] == 'islandora:bookCModel':
+    package_basename = get_file_basename(package_metadata['filename'])
+    package_folder = '{0}/{1}'.format(package_path, package_basename) 
+    os.system('mkdir {0}'.format(package_folder))
+    os.system('mv {0}/{1}.preprocess {2}'.format(package_path, package_metadata['filename'], package_folder))
+    os.system('unzip {0}/{1}.preprocess -d {0}/ {2}'.format(package_folder, package_metadata['filename'], silence_output))
+    os.system('rm {0}/{1}.preprocess'.format(package_folder, package_metadata['filename']))
+
+    #zip it back up and name it packagename.zip.preprocess
 
 
 
@@ -225,6 +235,7 @@ def validate_package(package_name):
           if output[0] != package_metadata['parent_collection']:
             package_errors.append("manifest.ini parent_collection {0} does not exist".format(package_metadata['parent_collection']))
       package_contents.remove('manifest.ini')
+
     for filename in package_contents:
       if get_file_extension(filename) == 'xml':
         try:
@@ -248,10 +259,10 @@ def validate_package(package_name):
           package_errors.append("Error while attempting to parse {0} (see s3://{1}/error/{2}.log for full error output)".format(filename, s3_path, package_metadata['filename']))
           exception_error = {'filename': filename, 'exception': sys.exc_info()}
       else:
-        if package_metadata['content_model'] and package_metadata['content_model'] != 'islandora:binaryObjectCModel' and get_file_extension(filename) not in cmodels[package_metadata['content_model']]:
+        if package_metadata['content_model'] and package_metadata['content_model'] not in ['islandora:binaryObjectCModel', 'islandora:bookCModel'] and get_file_extension(filename) not in cmodels[package_metadata['content_model']]:
           package_errors.append("{0} does not have an approved file extension for {1} objects".format(filename, package_metadata['content_model']))
         associated_mods = "{0}.xml".format(get_file_basename(filename))
-        if associated_mods not in package_contents:
+        if package_metadata['content_model'] and package_metadata['content_model'] not in ['islandora:bookCModel'] and associated_mods not in package_contents:
           package_errors.append("{0} has no associated MODS record".format(filename))
   if len(package_errors) > 0:
     invalid_logmsg = "Failed to validate with the following errors: {0}.".format(', '.join(package_errors))
@@ -272,7 +283,11 @@ def validate_package(package_name):
     return package_metadata
 
 def package_preprocess(package_metadata):
-  create_preprocess_package(package_metadata['filename']) 
+  create_preprocess_package(package_metadata) 
+
+  if package_metadata['content_model'] == 'islandora:bookCModel':
+    sys.exit('Preprocessing a book package. Exiting.')
+
   drupaluid = get_drupaluid_from_email(package_metadata)
   if package_metadata['content_model'] == 'islandora:binaryObjectCModel':
     drushcmd = "drush --root=/var/www/html/ -u {0} ibobsp --parent={1} --scan_target={2}/{3}.preprocess 2>&1".format(drupaluid, package_metadata['parent_collection'], package_path, package_metadata['filename'])
