@@ -30,10 +30,10 @@ cmodels = {
   'islandora:sp-audioCModel': ['wav', 'mp3'],
   'islandora:sp_videoCModel': ['mp4', 'mov', 'qt', 'm4v', 'avi', 'mkv'],
   'islandora:binaryObjectCModel': [],
-  #'islandora:compoundCModel',
-  #'islandora:bookCModel',
+  'islandora:bookCModel',
   #'islandora:newspaperCModel',
-  #'islandora:newspaperIssueCModel'
+  #'islandora:newspaperIssueCModel',
+  #'islandora:compoundCModel',
 }
 
 
