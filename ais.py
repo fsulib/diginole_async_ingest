@@ -31,7 +31,7 @@ cmodels = {
   'islandora:sp-audioCModel': ['wav', 'mp3'],
   'islandora:sp_videoCModel': ['mp4', 'mov', 'qt', 'm4v', 'avi', 'mkv'],
   'islandora:binaryObjectCModel': [],
-  'islandora:bookCModel': [],
+  'islandora:bookCModel': ['tif', 'tiff', 'jp2', 'jpg2'],
   #'islandora:newspaperCModel',
   #'islandora:newspaperIssueCModel',
   #'islandora:compoundCModel',
@@ -123,9 +123,23 @@ def create_preprocess_package(package_metadata):
     os.system('mv {0}/{1}.preprocess {2}'.format(package_path, package_metadata['filename'], package_folder))
     os.system('unzip {0}/{1}.preprocess -d {0}/ {2}'.format(package_folder, package_metadata['filename'], silence_output))
     os.system('rm {0}/{1}.preprocess'.format(package_folder, package_metadata['filename']))
-
-    #zip it back up and name it packagename.zip.preprocess
-
+    book_files = glob.glob("{0}/*".format(package_folder))
+    book_page_filenames = []
+    for book_file in book_files:
+      book_file_filename = book_file.split('/')[-1]
+      if get_file_extension(book_file_filename) != 'xml':
+        book_page_filenames.append(book_file_filename)
+    sorted_book_pages = sorted(book_page_filenames)
+    for index, filename in enumerate(sorted_book_pages):
+      filename_extension = get_file_extension(filename)
+      adjusted_index = index + 1
+      page_folder = "{0}/{1}".format(package_folder, adjusted_index)
+      os.system("mkdir {0}".format(page_folder))
+      os.system("mv {0}/{1} {2}/OBJ.{3}".format(package_folder, filename, page_folder, filename_extension))
+    metadata_filename = glob.glob("{0}/*.xml".format(package_folder))[0].split("/")[-1]
+    os.system("mv {0}/{1} {0}/MODS.xml".format(package_folder, metadata_filename))
+    os.system("cd {0}; zip -r {1}.preprocess {2} {3}".format(package_path, package_metadata['filename'], package_folder.split('/')[-1], silence_output))
+    os.system("rm -rf {0}".format(package_folder))
 
 
 # Dependent Functions
@@ -259,7 +273,7 @@ def validate_package(package_name):
           package_errors.append("Error while attempting to parse {0} (see s3://{1}/error/{2}.log for full error output)".format(filename, s3_path, package_metadata['filename']))
           exception_error = {'filename': filename, 'exception': sys.exc_info()}
       else:
-        if package_metadata['content_model'] and package_metadata['content_model'] not in ['islandora:binaryObjectCModel', 'islandora:bookCModel'] and get_file_extension(filename) not in cmodels[package_metadata['content_model']]:
+        if package_metadata['content_model'] and package_metadata['content_model'] not in ['islandora:binaryObjectCModel'] and get_file_extension(filename) not in cmodels[package_metadata['content_model']]:
           package_errors.append("{0} does not have an approved file extension for {1} objects".format(filename, package_metadata['content_model']))
         associated_mods = "{0}.xml".format(get_file_basename(filename))
         if package_metadata['content_model'] and package_metadata['content_model'] not in ['islandora:bookCModel'] and associated_mods not in package_contents:
