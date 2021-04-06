@@ -298,12 +298,10 @@ def validate_package(package_name):
 
 def package_preprocess(package_metadata):
   create_preprocess_package(package_metadata) 
-
-  if package_metadata['content_model'] == 'islandora:bookCModel':
-    sys.exit('Preprocessing a book package. Exiting.')
-
   drupaluid = get_drupaluid_from_email(package_metadata)
-  if package_metadata['content_model'] == 'islandora:binaryObjectCModel':
+  if package_metadata['content_model'] == 'islandora:bookCModel':
+    drushcmd = "drush --root=/var/www/html/ -u {0} ibbp --type=zip --parent={1} --scan_target={2}/{3}.preprocess --namespace=fsu --output_set_id 2>&1".format(drupaluid, package_metadata['parent_collection'], package_path, package_metadata['filename'])
+  elif package_metadata['content_model'] == 'islandora:binaryObjectCModel':
     drushcmd = "drush --root=/var/www/html/ -u {0} ibobsp --parent={1} --scan_target={2}/{3}.preprocess 2>&1".format(drupaluid, package_metadata['parent_collection'], package_path, package_metadata['filename'])
   else:
     drushcmd = "drush --root=/var/www/html/ -u {0} ibsp --type=zip --parent={1} --content_models={2} --scan_target={3}/{4}.preprocess 2>&1".format(drupaluid, package_metadata['parent_collection'], package_metadata['content_model'], package_path, package_metadata['filename'])
@@ -313,7 +311,10 @@ def package_preprocess(package_metadata):
     output = subprocess.check_output(drush_preprocess_exec)
     output = output.decode('utf-8').strip().split()
     package_metadata['status'] = 'preprocessed'
-    package_metadata['batch_set_id'] = output[1]
+    if package_metadata['content_model'] == 'islandora:bookCModel':
+      package_metadata['batch_set_id'] = output[0]
+    else:
+      package_metadata['batch_set_id'] = output[1]
     log("Preprocessed, assigned Batch Set ID {0}".format(package_metadata['batch_set_id']), log_file =  package_metadata['filename'])
   except subprocess.CalledProcessError as e:
     package_metadata['status'] = 'failed'
