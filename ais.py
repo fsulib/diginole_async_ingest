@@ -251,6 +251,7 @@ def validate_package(package_name):
       package_contents.remove('manifest.ini')
 
     xmlfiles = []
+    assetfiles = []
     for filename in package_contents:
       if get_file_extension(filename) == 'xml':
         xmlfiles.append(filename)
@@ -294,12 +295,17 @@ def validate_package(package_name):
           package_errors.append("Error while attempting to parse {0} (see s3://{1}/error/{2}.log for full error output)".format(filename, s3_path, package_metadata['filename']))
           exception_error = {'filename': filename, 'exception': sys.exc_info()}
       else:
+        assetfiles.append(filename)
         if package_metadata['content_model'] and package_metadata['content_model'] not in ['islandora:binaryObjectCModel'] and get_file_extension(filename) not in cmodels[package_metadata['content_model']]:
           package_errors.append("{0} does not have an approved file extension for {1} objects".format(filename, package_metadata['content_model']))
         associated_mods = "{0}.xml".format(get_file_basename(filename))
         if package_metadata['content_model'] and package_metadata['content_model'] not in ['islandora:bookCModel', 'islandora:newspaperIssueCModel'] and associated_mods not in package_contents:
           package_errors.append("{0} has no associated MODS record".format(filename))
-    if package_metadata['content_model'] and package_metadata['content_model'] in ['islandora:bookCModel', 'islandora:newspaperIssueCModel'] and len(xmlfiles) > 1:
+    if len(assetfiles) < 1:
+      package_errors.append("{0} has no asset files".format(package_metadata['filename']))
+    if len(xmlfiles) < 1:
+      package_errors.append("{0} has no XML files".format(package_metadata['filename']))
+    elif package_metadata['content_model'] and package_metadata['content_model'] in ['islandora:bookCModel', 'islandora:newspaperIssueCModel'] and len(xmlfiles) > 1:
       package_errors.append("{0} packages should only ever have 1 XML file but {1} has {2} XML files".format(package_metadata['content_model'], package_metadata['filename'], len(xmlfiles)))
   if len(package_errors) > 0:
     invalid_logmsg = "Failed to validate with the following errors: {0}.".format(', '.join(package_errors))
