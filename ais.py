@@ -32,8 +32,7 @@ cmodels = {
   'islandora:sp_videoCModel': ['mp4', 'mov', 'qt', 'm4v', 'avi', 'mkv'],
   'islandora:binaryObjectCModel': [],
   'islandora:bookCModel': ['tif', 'tiff', 'jp2', 'jpg2'],
-  #'islandora:newspaperCModel',
-  #'islandora:newspaperIssueCModel',
+  'islandora:newspaperIssueCModel': ['tif', 'tiff', 'jp2', 'jpg2'],
   #'islandora:compoundCModel',
 }
 
@@ -116,21 +115,21 @@ def check_if_iid_exists_elsewhere(iid):
 def create_preprocess_package(package_metadata):
   os.system("zip -d {0}/{1} manifest.ini {2}".format(package_path, package_metadata['filename'], silence_output))
   os.system("mv {0}/{1} {0}/{1}.preprocess".format(package_path, package_metadata['filename']))
-  if package_metadata['content_model'] == 'islandora:bookCModel':
+  if package_metadata['content_model'] in ['islandora:bookCModel', 'islandora:newspaperIssueCModel']:
     package_basename = get_file_basename(package_metadata['filename'])
     package_folder = '{0}/{1}'.format(package_path, package_basename) 
     os.system('mkdir {0}'.format(package_folder))
     os.system('mv {0}/{1}.preprocess {2}'.format(package_path, package_metadata['filename'], package_folder))
     os.system('unzip {0}/{1}.preprocess -d {0}/ {2}'.format(package_folder, package_metadata['filename'], silence_output))
     os.system('rm {0}/{1}.preprocess'.format(package_folder, package_metadata['filename']))
-    book_files = glob.glob("{0}/*".format(package_folder))
-    book_page_filenames = []
-    for book_file in book_files:
-      book_file_filename = book_file.split('/')[-1]
-      if get_file_extension(book_file_filename) != 'xml':
-        book_page_filenames.append(book_file_filename)
-    sorted_book_pages = sorted(book_page_filenames)
-    for index, filename in enumerate(sorted_book_pages):
+    package_files = glob.glob("{0}/*".format(package_folder))
+    package_page_filenames = []
+    for package_file in package_files:
+      package_file_filename = package_file.split('/')[-1]
+      if get_file_extension(package_file_filename) != 'xml':
+        package_page_filenames.append(package_file_filename)
+    sorted_package_pages = sorted(package_page_filenames)
+    for index, filename in enumerate(sorted_package_pages):
       filename_extension = get_file_extension(filename)
       adjusted_index = index + 1
       page_folder = "{0}/{1}".format(package_folder, adjusted_index)
@@ -276,7 +275,7 @@ def validate_package(package_name):
         if package_metadata['content_model'] and package_metadata['content_model'] not in ['islandora:binaryObjectCModel'] and get_file_extension(filename) not in cmodels[package_metadata['content_model']]:
           package_errors.append("{0} does not have an approved file extension for {1} objects".format(filename, package_metadata['content_model']))
         associated_mods = "{0}.xml".format(get_file_basename(filename))
-        if package_metadata['content_model'] and package_metadata['content_model'] not in ['islandora:bookCModel'] and associated_mods not in package_contents:
+        if package_metadata['content_model'] and package_metadata['content_model'] not in ['islandora:bookCModel', 'islandora:newspaperIssueCModel'] and associated_mods not in package_contents:
           package_errors.append("{0} has no associated MODS record".format(filename))
   if len(package_errors) > 0:
     invalid_logmsg = "Failed to validate with the following errors: {0}.".format(', '.join(package_errors))
@@ -301,6 +300,8 @@ def package_preprocess(package_metadata):
   drupaluid = get_drupaluid_from_email(package_metadata)
   if package_metadata['content_model'] == 'islandora:bookCModel':
     drushcmd = "drush --root=/var/www/html/ -u {0} ibbp --type=zip --parent={1} --scan_target={2}/{3}.preprocess --namespace=fsu --output_set_id 2>&1".format(drupaluid, package_metadata['parent_collection'], package_path, package_metadata['filename'])
+  elif package_metadata['content_model'] == 'islandora:newspaperIssueCModel':
+    drushcmd = "drush --root=/var/www/html/ -u {0} inbp --type=zip --parent={1} --scan_target={2}/{3}.preprocess --namespace=fsu --output_set_id 2>&1".format(drupaluid, package_metadata['parent_collection'], package_path, package_metadata['filename'])
   elif package_metadata['content_model'] == 'islandora:binaryObjectCModel':
     drushcmd = "drush --root=/var/www/html/ -u {0} ibobsp --parent={1} --scan_target={2}/{3}.preprocess 2>&1".format(drupaluid, package_metadata['parent_collection'], package_path, package_metadata['filename'])
   else:
@@ -311,7 +312,7 @@ def package_preprocess(package_metadata):
     output = subprocess.check_output(drush_preprocess_exec)
     output = output.decode('utf-8').strip().split()
     package_metadata['status'] = 'preprocessed'
-    if package_metadata['content_model'] == 'islandora:bookCModel':
+    if package_metadata['content_model'] in ['islandora:bookCModel', 'islandora:newspaperIssueCModel']:
       package_metadata['batch_set_id'] = output[0]
     else:
       package_metadata['batch_set_id'] = output[1]
