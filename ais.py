@@ -6,6 +6,7 @@ import datetime
 import glob
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -249,8 +250,10 @@ def validate_package(package_name):
             package_errors.append("manifest.ini parent_collection {0} does not exist".format(package_metadata['parent_collection']))
       package_contents.remove('manifest.ini')
 
+    xmlfiles = []
     for filename in package_contents:
       if get_file_extension(filename) == 'xml':
+        xmlfiles.append(filename)
         try:
           xmldata = xml.etree.ElementTree.fromstring(package.read(filename).decode('utf-8')) 
           iid = False
@@ -268,6 +271,25 @@ def validate_package(package_name):
           iid_exempt_cmodels = get_iid_exempt_cmodels()
           if not iid and package_metadata['content_model'] and package_metadata['content_model'] not in iid_exempt_cmodels:
             package_errors.append("{0} does not contain an IID".format(filename))
+          if package_metadata['content_model'] and package_metadata['content_model'] == 'islandora:newspaperIssueCModel':
+            date_issued_present = False
+            origins = xmldata.findall('{http://www.loc.gov/mods/v3}originInfo')
+            for origin in origins:
+              for element in origin:
+                if element.tag == '{http://www.loc.gov/mods/v3}dateIssued':
+                  date_issued_present = True
+                  if 'encoding' not in element.attrib.keys():
+                    package_errors.append("{0} originInfo/dateIssued missing encoding attribute".format(filename))
+                  else:
+                    if element.attrib['encoding'].lower() != 'iso8601':
+                      package_errors.append("{0} originInfo/dateIssued encoding attribute is {1}, but is08601 is required".format(filename, element.attrib['encoding']))
+                    else:
+                      date_issued = element.text
+                      iso_regex = '^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]$'
+                      if not re.match(iso_regex, date_issued):
+                        package_errors.append("{0} originInfo/dateIssued {1} does not fit iso8601 YYYY-MM-DD format".format(filename, date_issued))
+            if not date_issued_present:
+              package_errors.append("{0} missing dateIssued element".format(filename))
         except:
           package_errors.append("Error while attempting to parse {0} (see s3://{1}/error/{2}.log for full error output)".format(filename, s3_path, package_metadata['filename']))
           exception_error = {'filename': filename, 'exception': sys.exc_info()}
@@ -277,6 +299,8 @@ def validate_package(package_name):
         associated_mods = "{0}.xml".format(get_file_basename(filename))
         if package_metadata['content_model'] and package_metadata['content_model'] not in ['islandora:bookCModel', 'islandora:newspaperIssueCModel'] and associated_mods not in package_contents:
           package_errors.append("{0} has no associated MODS record".format(filename))
+    if package_metadata['content_model'] and package_metadata['content_model'] in ['islandora:bookCModel', 'islandora:newspaperIssueCModel'] and len(xmlfiles) > 1:
+      package_errors.append("{0} packages should only ever have 1 XML file but {1} has {2} XML files".format(package_metadata['content_model'], package_metadata['filename'], len(xmlfiles)))
   if len(package_errors) > 0:
     invalid_logmsg = "Failed to validate with the following errors: {0}.".format(', '.join(package_errors))
     log(invalid_logmsg, log_file = package_name)
