@@ -190,8 +190,14 @@ def download_oldest_new_package():
   oldest_new_package = packages[0]
   oldest_new_package_name = oldest_new_package[1]
   os.system('aws s3 cp s3://{0}/new/{1} {2}/{1} {3}'.format(s3_path, oldest_new_package_name, package_path, silence_output))
-  log("New package {0}/new/{1} detected and downloaded to {2}/{1}.".format(s3_path, oldest_new_package_name, package_path), log_file = oldest_new_package_name)
-  return oldest_new_package_name
+  if not os.path.exists("{0}/{1}".format(package_path, oldest_new_package_name)): 
+    error_msg = "Error: Unable to download '{0}'. AIS processing halted until problem is addressed.".format(package_name)
+    set_diginole_ais_log_status(error_msg)
+    sys.exit(error_msg)
+  else:
+    log("New package {0}/new/{1} detected and downloaded to {2}/{1}.".format(s3_path, oldest_new_package_name, package_path), log_file = oldest_new_package_name)
+    return oldest_new_package_name
+
 
 def validate_package(package_name):
   set_diginole_ais_log_status(package_name)
