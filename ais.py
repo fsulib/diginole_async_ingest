@@ -7,6 +7,7 @@ import glob
 import json
 import os
 import re
+import requests
 import subprocess
 import sys
 import time
@@ -112,6 +113,19 @@ def check_if_iid_exists_elsewhere(iid):
   drushcmd = 'docker exec {0} bash -c "drush  --root=/var/www/html php-eval \\"module_load_include(\'inc\', \'diginole_purlz\', \'includes/utilities\'); echo json_encode(diginole_purlz_search_iid(\'{1}\'));\\""'.format(apache_name, iid)
   output = json.loads(os.popen(drushcmd).read())
   return output
+
+def check_if_apache_is_up():
+  return requests.get('http://' + os.getenv('BASE_DOMAIN') + ':' + os.getenv('APACHE_EXTERNAL_PORT')).ok
+
+def check_if_fedora_is_up():
+  return requests.get('http://fedora.isle.lib.fsu.edu:8080').ok
+
+def wait_for_stack_to_stabilize():
+  if check_if_apache_is_up() and check_if_fedora_is_up():
+    return True
+  else:
+    time.sleep(30)
+    wait_for_stack_to_stabilize()
 
 def create_preprocess_package(package_metadata):
   os.system("zip -d {0}/{1} manifest.ini {2}".format(package_path, package_metadata['filename'], silence_output))
