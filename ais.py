@@ -114,18 +114,31 @@ def check_if_iid_exists_elsewhere(iid):
   output = json.loads(os.popen(drushcmd).read())
   return output
 
-def check_if_apache_is_up():
-  return requests.get('http://' + os.getenv('BASE_DOMAIN') + ':' + os.getenv('APACHE_EXTERNAL_PORT')).ok
+def check_if_apache_is_down():
+  try: 
+    result = not requests.get('http://' + os.getenv('BASE_DOMAIN') + ':' + os.getenv('APACHE_EXTERNAL_PORT')).ok
+  except:
+    result = True
+  return result
 
-def check_if_fedora_is_up():
-  return requests.get('http://fedora.isle.lib.fsu.edu:8080').ok
+def check_if_fedora_is_down():
+  try:
+    result = not requests.get('http://fedora.isle.lib.fsu.edu:8080').ok
+  except: 
+    result = True
+  return result
 
-def wait_for_stack_to_stabilize():
-  if check_if_apache_is_up() and check_if_fedora_is_up():
-    return True
-  else:
+def wait_for_stack_to_stabilize(package_name):
+  while check_if_apache_is_down() or check_if_fedora_is_down():
+    set_diginole_ais_log_status("Error: Critical services unavailable.")
+    if check_if_apache_is_down():
+      log("Apache currently unreachable. Waiting...", log_file = False)
+    if check_if_fedora_is_down():
+      log("Fedora currently unreachable. Waiting...", log_file = False)
     time.sleep(30)
-    wait_for_stack_to_stabilize()
+  else:
+    set_diginole_ais_log_status(package_name)
+    return True
 
 def create_preprocess_package(package_metadata):
   os.system("zip -d {0}/{1} manifest.ini {2}".format(package_path, package_metadata['filename'], silence_output))
@@ -215,6 +228,7 @@ def download_oldest_new_package():
 
 def validate_package(package_name):
   set_diginole_ais_log_status(package_name)
+  wait_for_stack_to_stabilize(package_name)
   package_metadata = {'filename': package_name}
   package_metadata['start_time'] = get_current_time()
   package_errors = []
@@ -358,6 +372,7 @@ def package_preprocess(package_metadata):
     drushcmd = "drush --root=/var/www/html/ -u {0} ibsp --type=zip --parent={1} --content_models={2} --scan_target={3}/{4}.preprocess 2>&1".format(drupaluid, package_metadata['parent_collection'], package_metadata['content_model'], package_path, package_metadata['filename'])
   drush_preprocess_exec = drush_exec.copy()
   drush_preprocess_exec.append(drushcmd)
+  wait_for_stack_to_stabilize(package_metadata['filename'])
   try:
     output = subprocess.check_output(drush_preprocess_exec)
     output = output.decode('utf-8').strip().split()
@@ -385,6 +400,7 @@ def package_ingest(package_metadata):
     drushcmd = "drush --root=/var/www/html/ -u 1 ibi --ingest_set={0} 2>&1".format(package_metadata['batch_set_id'])
     drush_process_exec = drush_exec.copy()
     drush_process_exec.append(drushcmd)
+    wait_for_stack_to_stabilize(package_metadata['filename'])
     try:
       output = subprocess.check_output(drush_process_exec)
       output = output.decode('utf-8').split('\n')
