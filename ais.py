@@ -141,8 +141,7 @@ def wait_for_stack_to_stabilize(package_name):
     return True
 
 def create_preprocess_package(package_metadata):
-  os.system("zip -d {0}/{1} manifest.ini {2}".format(package_path, package_metadata['filename'], silence_output))
-  os.system("mv {0}/{1} {0}/{1}.preprocess".format(package_path, package_metadata['filename']))
+  os.system("mv {0}/{1}.validate {0}/{1}.preprocess".format(package_path, package_metadata['filename']))
   if package_metadata['content_model'] in ['islandora:bookCModel', 'islandora:newspaperIssueCModel']:
     package_basename = get_file_basename(package_metadata['filename'])
     package_folder = '{0}/{1}'.format(package_path, package_basename) 
@@ -233,11 +232,23 @@ def validate_package(package_name):
   package_metadata['start_time'] = get_current_time()
   package_errors = []
   exception_error = False 
-  os.system("zip -d {0}/{1} __MACOSX/\* {2}".format(package_path, package_name, silence_output))
-  package = zipfile.ZipFile("{0}/{1}".format(package_path, package_name), 'r')
-  package_contents = package.namelist()
+
+  validatable_package_name = package_name + ".validate"
+  original_package = zipfile.ZipFile("{0}/{1}".format(package_path, package_name), 'r')
+  validatable_package = zipfile.ZipFile("{0}/{1}".format(package_path, validatable_package_name), 'w')
+  for item in original_package.infolist():
+    buffer = original_package.read(item.filename)
+    if not item.filename.startswith('__MACOSX'):
+        validatable_package.writestr(item, buffer)
+  original_package.close()
+  validatable_package.close()
+  os.system('rm {0}/{1}'.format(package_path, package_name))
+
+  validatable_package = zipfile.ZipFile("{0}/{1}".format(package_path, validatable_package_name), 'r')
+  validatable_package_contents = validatable_package.namelist()
+
   subfolder_files = []
-  for filename in package_contents:
+  for filename in validatable_package_contents:
     splitfilename = filename.split('/')
     if len(splitfilename) > 1:
       if splitfilename[1]:
@@ -246,14 +257,14 @@ def validate_package(package_name):
     joined_subfolder_files = ', '.join(subfolder_files)
     package_errors.append("package contains files in subdirectories: [{0}]".format(joined_subfolder_files))
   else:
-    if 'manifest.ini' not in package_contents:
+    if 'manifest.ini' not in validatable_package_contents:
       package_metadata['submitter_email'] = False
       package_metadata['content_model'] = False
       package_metadata['parent_collection'] = False
       package_errors.append('missing manifest.ini file')
     else:
       manifest = configparser.ConfigParser()
-      manifest.read_string(package.read('manifest.ini').decode('utf-8'))
+      manifest.read_string(validatable_package.read('manifest.ini').decode('utf-8'))
       if 'package' not in manifest.sections():
         package_errors.append('manifest.ini missing [package] section')
       else:
@@ -282,15 +293,15 @@ def validate_package(package_name):
           output = output.decode('utf-8').split('\n')
           if output[0] != package_metadata['parent_collection']:
             package_errors.append("manifest.ini parent_collection {0} does not exist".format(package_metadata['parent_collection']))
-      package_contents.remove('manifest.ini')
+      validatable_package_contents.remove('manifest.ini')
 
     xmlfiles = []
     assetfiles = []
-    for filename in package_contents:
+    for filename in validatable_package_contents:
       if get_file_extension(filename) == 'xml':
         xmlfiles.append(filename)
         try:
-          xmldata = xml.etree.ElementTree.fromstring(package.read(filename).decode('utf-8')) 
+          xmldata = xml.etree.ElementTree.fromstring(validatable_package.read(filename).decode('utf-8')) 
           iid = False
           identifiers = xmldata.findall('{http://www.loc.gov/mods/v3}identifier')
           for identifier in identifiers:
@@ -333,7 +344,7 @@ def validate_package(package_name):
         if package_metadata['content_model'] and package_metadata['content_model'] not in ['islandora:binaryObjectCModel'] and get_file_extension(filename) not in cmodels[package_metadata['content_model']]:
           package_errors.append("{0} does not have an approved file extension for {1} objects".format(filename, package_metadata['content_model']))
         associated_mods = "{0}.xml".format(get_file_basename(filename))
-        if package_metadata['content_model'] and package_metadata['content_model'] not in ['islandora:bookCModel', 'islandora:newspaperIssueCModel'] and associated_mods not in package_contents:
+        if package_metadata['content_model'] and package_metadata['content_model'] not in ['islandora:bookCModel', 'islandora:newspaperIssueCModel'] and associated_mods not in validatable_package_contents:
           package_errors.append("{0} has no associated MODS record".format(filename))
     if len(assetfiles) < 1:
       package_errors.append("{0} has no asset files".format(package_metadata['filename']))
