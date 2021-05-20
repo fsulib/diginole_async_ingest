@@ -141,7 +141,17 @@ def wait_for_stack_to_stabilize(package_name):
     return True
 
 def create_preprocess_package(package_metadata):
-  os.system("mv {0}/{1}.validate {0}/{1}.preprocess".format(package_path, package_metadata['filename']))
+  validatable_package_name = package_metadata['filename'] + ".validate"
+  preprocess_package_name = package_metadata['filename'] + ".preprocess"
+  validatable_package = zipfile.ZipFile("{0}/{1}".format(package_path, validatable_package_name), 'r')
+  preprocess_package = zipfile.ZipFile("{0}/{1}".format(package_path, preprocess_package_name), 'w')
+  for item in validatable_package.infolist():
+    buffer = validatable_package.read(item.filename)
+    if item.filename != 'manifest.ini':
+        preprocess_package.writestr(item, buffer)
+  validatable_package.close()
+  preprocess_package.close()
+  os.system('rm {0}/{1}'.format(package_path, validatable_package_name))
   if package_metadata['content_model'] in ['islandora:bookCModel', 'islandora:newspaperIssueCModel']:
     package_basename = get_file_basename(package_metadata['filename'])
     package_folder = '{0}/{1}'.format(package_path, package_basename) 
@@ -232,7 +242,6 @@ def validate_package(package_name):
   package_metadata['start_time'] = get_current_time()
   package_errors = []
   exception_error = False 
-
   validatable_package_name = package_name + ".validate"
   original_package = zipfile.ZipFile("{0}/{1}".format(package_path, package_name), 'r')
   validatable_package = zipfile.ZipFile("{0}/{1}".format(package_path, validatable_package_name), 'w')
@@ -243,10 +252,8 @@ def validate_package(package_name):
   original_package.close()
   validatable_package.close()
   os.system('rm {0}/{1}'.format(package_path, package_name))
-
   validatable_package = zipfile.ZipFile("{0}/{1}".format(package_path, validatable_package_name), 'r')
   validatable_package_contents = validatable_package.namelist()
-
   subfolder_files = []
   for filename in validatable_package_contents:
     splitfilename = filename.split('/')
