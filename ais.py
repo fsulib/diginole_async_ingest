@@ -109,6 +109,19 @@ def set_diginole_ais_log_status(value):
   drush_vset.append(drushcmd)
   output = subprocess.check_output(drush_vset)
 
+def get_diginole_ais_pause_status():
+  drushcmd = "drush --root=/var/www/html vget diginole_ais_pause"
+  drush_vget = drush_exec.copy()
+  drush_vget.append(drushcmd)
+  output = subprocess.check_output(drush_vget)
+  output = output.decode("utf-8")
+  output = output.rstrip()
+  output = output.lstrip('diginole_ais_pause: ')
+  if output == '1':
+    return True
+  else:
+    return False
+
 def check_if_iid_exists_elsewhere(iid):
   drushcmd = 'docker exec {0} bash -c "drush  --root=/var/www/html php-eval \\"module_load_include(\'inc\', \'diginole_purlz\', \'includes/utilities\'); echo json_encode(diginole_purlz_search_iid(\'{1}\'));\\""'.format(apache_name, iid)
   output = json.loads(os.popen(drushcmd).read())
@@ -469,15 +482,18 @@ def package_ingest(package_metadata):
   return package_metadata
 
 def process_available_s3_packages():
-  if not check_new_packages():
-    log("No new packages detected in {0}/new/.".format(s3_path), log_file = False)
+  if get_diginole_ais_pause_status():
+      log("AIS paused. Unpause to resume processing available packages.".format(s3_path), log_file = False)
   else:
-    package_name = download_oldest_new_package()
-    package_metadata = validate_package(package_name)
-    if package_metadata:
-      package_metadata = package_preprocess(package_metadata)
-      package_metadata = package_ingest(package_metadata)
-    process_available_s3_packages()
+    if not check_new_packages():
+      log("No new packages detected in {0}/new/.".format(s3_path), log_file = False)
+    else:
+      package_name = download_oldest_new_package()
+      package_metadata = validate_package(package_name)
+      if package_metadata:
+        package_metadata = package_preprocess(package_metadata)
+        package_metadata = package_ingest(package_metadata)
+      process_available_s3_packages()
 
 
 # Main function
