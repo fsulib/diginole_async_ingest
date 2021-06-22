@@ -347,13 +347,13 @@ def validate_package(package_name):
                   if 'encoding' not in element.attrib.keys():
                     package_errors.append("{0} originInfo/dateIssued missing encoding attribute".format(filename))
                   else:
-                    if element.attrib['encoding'].lower() != 'iso8601':
-                      package_errors.append("{0} originInfo/dateIssued encoding attribute is {1}, but is08601 is required".format(filename, element.attrib['encoding']))
+                    if element.attrib['encoding'].lower() not in ['w3cdtf', 'iso8601']:
+                      package_errors.append("{0} originInfo/dateIssued encoding attribute is {1}, but is08601 or w3cdtf is required to reflect YYYY-MM-DD format".format(filename, element.attrib['encoding']))
                     else:
                       date_issued = element.text
                       iso_regex = '^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]$'
                       if not re.match(iso_regex, date_issued):
-                        package_errors.append("{0} originInfo/dateIssued {1} does not fit iso8601 YYYY-MM-DD format".format(filename, date_issued))
+                        package_errors.append("{0} originInfo/dateIssued {1} does not fit iso8601/w3cdtf YYYY-MM-DD format".format(filename, date_issued))
             if not date_issued_present:
               package_errors.append("{0} missing dateIssued element".format(filename))
         except:
