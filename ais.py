@@ -35,7 +35,7 @@ cmodels = {
   'islandora:binaryObjectCModel': [],
   'islandora:bookCModel': ['tif', 'tiff', 'jp2', 'jpg2'],
   'islandora:newspaperIssueCModel': ['tif', 'tiff', 'jp2', 'jpg2'],
-  #'islandora:compoundCModel',
+  'islandora:compoundCModel': [],
 }
 
 
@@ -393,7 +393,7 @@ def validate_package(package_name):
           exception_error = {'filename': filename, 'exception': sys.exc_info()}
       else:
         assetfiles.append(filename)
-        if package_metadata['content_model'] and package_metadata['content_model'] not in ['islandora:binaryObjectCModel'] and get_file_extension(filename) not in cmodels[package_metadata['content_model']]:
+        if package_metadata['content_model'] and package_metadata['content_model'] not in ['islandora:binaryObjectCModel', 'islandora:compoundCModel'] and get_file_extension(filename) not in cmodels[package_metadata['content_model']]:
           package_errors.append("{0} does not have an approved file extension for {1} objects".format(filename, package_metadata['content_model']))
         associated_mods = "{0}.xml".format(get_file_basename(filename))
         if package_metadata['content_model'] and package_metadata['content_model'] not in ['islandora:bookCModel', 'islandora:newspaperIssueCModel'] and associated_mods not in validatable_package_contents:
