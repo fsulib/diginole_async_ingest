@@ -57,6 +57,32 @@ def check_pidfile():
 def get_current_time():
   return int(time.time())
 
+def get_package_size(package_name):
+  output = os.popen('aws s3 ls --human-readable s3://{0}/new/{1}'.format(s3_path, package_name)).readlines()[0].split()
+  size_number = output[2]
+  size_measure = output[3]
+  size_formatted = '{0}{1}'.format(size_number, size_measure)
+  return size_formatted 
+
+def update_diginole_ais_backlog_info():
+  backlog_list = os.popen('aws s3 ls s3://{0}/new --recursive'.format(s3_path)).readlines()
+  backlog_count = len(backlog_list) - 1
+  backlog_size = os.popen('aws s3 ls --summarize --human-readable s3://{0}/new/'.format(s3_path)).readlines()[-1]
+  backlog_size = backlog_size.strip().split()
+
+  if int(backlog_count) > 0:
+    size_number = backlog_size[2]
+    size_measure = backlog_size[3]
+    size_formatted = '{0}{1}'.format(size_number, size_measure)
+    backlog_string = '\'{0} ({1})\''.format(backlog_count, size_formatted)
+  else:
+    backlog_string = '0'
+    
+  drushcmd = "drush --root=/var/www/html vset diginole_ais_process_backlog {0} {1}".format(backlog_string, silence_output)
+  drush_vset = drush_exec.copy()
+  drush_vset.append(drushcmd)
+  output = subprocess.check_output(drush_vset)
+
 def write_to_drupal_log(start_time, stop_time, package_name, package_status, message):
   current_time = get_current_time()
   logcmd = 'docker exec {0} bash -c "drush --root=/var/www/html sql-query \\"insert into diginole_ais_log (start, stop, package, status, message) values ({1}, {2}, \'{3}\', \'{4}\', \'{5}\');\\"" {6}'.format(apache_name, start_time, stop_time, package_name, package_status, message, silence_output)
@@ -103,7 +129,7 @@ def get_iid_exempt_cmodels():
   output = os.popen(cmdstr).readlines()[0].lstrip('diginole_purlz_exempt_cmodels: ').lstrip("'").rstrip().rstrip("'")
   return output.split(', ')
 
-def set_diginole_ais_log_status(value):
+def set_diginole_ais_process_status(value):
   drushcmd = "drush --root=/var/www/html vset diginole_ais_process_status {1} {2}".format(apache_name, value, silence_output)
   drush_vset = drush_exec.copy()
   drush_vset.append(drushcmd)
@@ -143,14 +169,17 @@ def check_if_fedora_is_down():
 
 def wait_for_stack_to_stabilize(package_name):
   while check_if_apache_is_down() or check_if_fedora_is_down():
-    set_diginole_ais_log_status("Error: Critical services unavailable.")
+    set_diginole_ais_process_status("Error: Critical services unavailable.")
     if check_if_apache_is_down():
       log("Apache currently unreachable. Waiting...", log_file = False)
     if check_if_fedora_is_down():
       log("Fedora currently unreachable. Waiting...", log_file = False)
     time.sleep(30)
   else:
-    set_diginole_ais_log_status(package_name)
+    current_time = get_current_time()
+    package_size = get_package_size(package_name)
+    process_status = '{0},{1},{2}'.format(package_name, package_size, current_time)
+    set_diginole_ais_process_status(process_status)
     return True
 
 def create_preprocess_package(package_metadata):
@@ -241,7 +270,7 @@ def download_oldest_new_package():
   os.system('aws s3 cp s3://{0}/new/{1} {2}/{1} {3}'.format(s3_path, oldest_new_package_name, package_path, silence_output))
   if not os.path.exists("{0}/{1}".format(package_path, oldest_new_package_name)): 
     error_msg = "Error: Unable to download '{0}'. AIS processing halted until problem is addressed.".format(package_name)
-    set_diginole_ais_log_status(error_msg)
+    set_diginole_ais_process_status(error_msg)
     sys.exit(error_msg)
   else:
     log("New package {0}/new/{1} detected and downloaded to {2}/{1}.".format(s3_path, oldest_new_package_name, package_path), log_file = oldest_new_package_name)
@@ -249,7 +278,10 @@ def download_oldest_new_package():
 
 
 def validate_package(package_name):
-  set_diginole_ais_log_status(package_name)
+  current_time = get_current_time()
+  package_size = get_package_size(package_name)
+  process_status = '{0},{1},{2}'.format(package_name, package_size, current_time)
+  set_diginole_ais_process_status(process_status)
   wait_for_stack_to_stabilize(package_name)
   package_metadata = {'filename': package_name}
   package_metadata['start_time'] = get_current_time()
@@ -383,7 +415,7 @@ def validate_package(package_name):
     log("Package and log data moved to s3://{0}/error/.".format(s3_path), log_file = False)
     package_metadata['stop_time'] = get_current_time()
     write_to_drupal_log(package_metadata['start_time'], package_metadata['stop_time'], package_metadata['filename'], 'Invalid', invalid_logmsg)
-    set_diginole_ais_log_status("Inactive")
+    set_diginole_ais_process_status("Inactive")
     return False
   else:
     package_metadata['status'] = 'validated'
@@ -423,7 +455,7 @@ def package_preprocess(package_metadata):
     log("Package and log data moved to s3://{0}/error/.".format(s3_path), log_file = False)
     package_metadata['stop_time'] = get_current_time()
     write_to_drupal_log(package_metadata['start_time'], package_metadata['stop_time'], package_metadata['filename'], 'Error', "Error encountered during preprocessing, see s3://{0}/error/{1}.log for full error output.".format(s3_path, package_metadata['filename']))
-    set_diginole_ais_log_status("Inactive")
+    set_diginole_ais_process_status("Inactive")
   return package_metadata
 
 def package_ingest(package_metadata):
@@ -447,7 +479,7 @@ def package_ingest(package_metadata):
         log("Package and log data moved to s3://{0}/error/.".format(s3_path), log_file = False)
         package_metadata['stop_time'] = get_current_time()
         write_to_drupal_log(package_metadata['start_time'], package_metadata['stop_time'], package_metadata['filename'], 'Error', "Error encountered during ingestion, see s3://{0}/error/{1}.log for full error output.".format(s3_path, package_metadata['filename']))
-        set_diginole_ais_log_status("Inactive")
+        set_diginole_ais_process_status("Inactive")
       else:
         for line in output:
           if line.startswith('Ingested'):
@@ -467,7 +499,7 @@ def package_ingest(package_metadata):
         log("Package and log data moved to s3://{0}/done/.".format(s3_path), log_file = False)
         package_metadata['stop_time'] = get_current_time()
         write_to_drupal_log(package_metadata['start_time'], package_metadata['stop_time'], package_metadata['filename'], 'Success', pidstring)
-        set_diginole_ais_log_status("Inactive")
+        set_diginole_ais_process_status("Inactive")
     except subprocess.CalledProcessError as e:
       package_metadata['status'] = 'failed'
       log("Exception caught during ingestion, Batch Set {0} failed with {1}".format(package_metadata['batch_set_id'], sys.exc_info()), log_file = package_metadata['filename'])
@@ -478,10 +510,11 @@ def package_ingest(package_metadata):
       log("Package and log data moved to s3://{0}/error/.".format(s3_path), log_file = False)
       package_metadata['stop_time'] = get_current_time()
       write_to_drupal_log(package_metadata['start_time'], package_metadata['stop_time'], package_metadata['filename'], 'Error', "Error encountered during ingestion, see s3://{0}/error/{1}.log for full error output.".format(s3_path, package_metadata['filename']))
-      set_diginole_ais_log_status("Inactive")
+      set_diginole_ais_process_status("Inactive")
   return package_metadata
 
 def process_available_s3_packages():
+  update_diginole_ais_backlog_info()
   if get_diginole_ais_pause_status():
       log("AIS paused. Unpause to resume processing available packages.".format(s3_path), log_file = False)
   else:
@@ -499,6 +532,7 @@ def process_available_s3_packages():
 # Main function
 def run():
   log("AIS triggered.", log_file = False)
+  update_diginole_ais_backlog_info()
   pid = check_pidfile()
   if pid:
     log("Another AIS process is already running. Halting execution.", log_file = False)
@@ -506,3 +540,4 @@ def run():
     write_pidfile()
     process_available_s3_packages()
     delete_pidfile()
+  update_diginole_ais_backlog_info()
