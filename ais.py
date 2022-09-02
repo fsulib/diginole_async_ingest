@@ -509,33 +509,60 @@ def package_ingest(package_metadata):
         log("Ingested, produced PIDs: {0}".format(pidstring), log_file = package_metadata['filename'])
         log("Ingestion produced the following log output:\n{0}".format(logstring), log_file = package_metadata['filename'])
 
+
         if 'ip_expiry' in package_metadata:
           ip_expiry = package_metadata['ip_expiry']
           log("{0} ip embargo detected from manifest.ini".format(ip_expiry), log_file = package_metadata['filename'])
           for pid in pids:
-            # drush -u 1 eval "module_load_include('inc', 'islandora_ip_embargo', 'includes/utilities'); islandora_ip_embargo_set_embargo('islandora:8', 2);"
-            # drush -u 1 eval "module_load_include('inc', 'islandora_ip_embargo', 'includes/utilities'); islandora_ip_embargo_set_embargo('islandora:9', 2, strtotime('2022-12-31'));"
-            # module_load_cmd = "module_load_include('inc', 'islandora_ip_embargo', 'includes/utilities');"
-            # ip_embargo_cmd = "islandora_ip_embargo_set_embargo('islandora:8', 2);"
-            # ip_embargo_cmd = module_load_cmd + ip_embargo_cmd
-            # drushcmd = "drush --root=/var/www/html/ -u 1 eval ip_embargo_cmd 2>&1".format()
+            log("ip_expiry is .{0}.".format(ip_expiry), log_file = package_metadata['filename'])
+            if ip_expiry != 'indefinite':
+              log("NOT indefinite (if)", log_file = package_metadata['filename'])
+              ip_embargo_cmd = "islandora_ip_embargo_set_embargo('{0}', 2, strtotime('{1}'));".format(pid, ip_expiry)
+            else:
+              log("IS indefinite (else)", log_file = package_metadata['filename'])
+              ip_embargo_cmd = "islandora_ip_embargo_set_embargo('{0}', 2);".format(pid)
+            module_load_cmd = "module_load_include('inc', 'islandora_ip_embargo', 'includes/utilities');"
+            ip_embargo_cmd = module_load_cmd + ip_embargo_cmd
+            drushcmd = "drush --root=/var/www/html/ -u 1 eval \"{0}\"".format(ip_embargo_cmd)
+            log("drushcmd = {0}".format(drushcmd), log_file = package_metadata['filename'])
+            drush_preprocess_exec = drush_exec.copy()
+            log("drush_preprocess_exec = {0}".format(drush_preprocess_exec), log_file = package_metadata['filename'])
+            drush_preprocess_exec.append(drushcmd)
+            log("drush_preprocess_exec = {0}".format(drush_preprocess_exec), log_file = package_metadata['filename'])
+            output = subprocess.check_output(drush_process_exec)
+            log("raw output = {0}".format(output), log_file = package_metadata['filename'])
+            output = output.decode('utf-8').split('\n')
+            log("decoded output = {0}".format(output), log_file = package_metadata['filename'])
             log("{0} ip embargo applied to {1}".format(ip_expiry, pid), log_file = package_metadata['filename'])
-        
+
+
         if 'scholar_expiry' in package_metadata and 'scholar_type' in package_metadata:
           scholar_expiry = package_metadata['scholar_expiry']
           scholar_type = package_metadata['scholar_type']
           log("{0} {1} scholar embargo detected from manifest.ini".format(scholar_expiry, scholar_type), log_file = package_metadata['filename'])
           for pid in pids:
-            # drush -u 1 eval "islandora_scholar_embargo_set_embargo('islandora:1');" # object indefinite
-            # drush -u 1 eval "islandora_scholar_embargo_set_embargo('islandora:2', array('OBJ'));" # datastream indefinite
-            # drush -u 1 eval "islandora_scholar_embargo_set_embargo('islandora:2', array('OBJ'), '2022-12-31');" # datastream terminal
-            # drush -u 1 eval "islandora_scholar_embargo_set_embargo('islandora:3', NULL, '2022-12-31');" # object terminal
-            # scholar_embargo_cmd = "islandora_scholar_embargo_set_embargo('islandora:1');" 
-            # drushcmd = "drush --root=/var/www/html/ -u 1 eval scholar_embargo_cmd 2>&1".format()
-            # drush_preprocess_exec = drush_exec.copy()
-            # drush_preprocess_exec.append(drushcmd)
+            if scholar_type is 'object':
+              if scholar_expiry is not 'indefinite':
+                scholar_embargo_cmd = "islandora_scholar_embargo_set_embargo('{0}', NULL, '{1}');".format(pid, scholar_expiry)
+              else:
+                scholar_embargo_cmd = "islandora_scholar_embargo_set_embargo('{0}');".format(pid)
+            else:
+              datastreams = scholar_type.replace(" ", "").split(",")
+              for datastream in datastreams:
+                if scholar_expiry is not 'indefinite':
+                  scholar_embargo_cmd = "islandora_scholar_embargo_set_embargo('{0}', array('{1}'), '{2}');".format(pid, datastream, scholar_expiry)
+                else:
+                  scholar_embargo_cmd = "islandora_scholar_embargo_set_embargo('{0}', array('{1}'));".format(pid, datastream)
+            drushcmd = "drush --root=/var/www/html/ -u 1 eval '{0}'".format(scholar_embargo_cmd)
+            log("Performing drush command '{0}'".format(drushcmd), log_file = package_metadata['filename'])
+            drush_preprocess_exec = drush_exec.copy()
+            drush_preprocess_exec.append(drushcmd)
+            output = subprocess.check_output(drush_process_exec)
+            output = output.decode('utf-8').split('\n')
+            log("{0}".format(output), log_file = package_metadata['filename'])
             log("{0} {1} scholar embargo applied to {2}".format(scholar_expiry, scholar_type, pid), log_file = package_metadata['filename'])
- 
+
+
         move_s3_file("s3://{0}/new/{1}".format(s3_path, package_metadata['filename']), "s3://{0}/done/{1}".format(s3_path, package_metadata['filename']))
         move_s3_file("{0}/{1}.preprocess".format(package_path, package_metadata['filename']), "s3://{0}/done/{1}.preprocess".format(s3_path, package_metadata['filename']))
         move_s3_file("{0}/{1}.log".format(package_path, package_metadata['filename']), "s3://{0}/done/{1}.log".format(s3_path, package_metadata['filename']))
