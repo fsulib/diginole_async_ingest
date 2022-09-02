@@ -513,6 +513,12 @@ def package_ingest(package_metadata):
           ip_expiry = package_metadata['ip_expiry']
           log("{0} ip embargo detected from manifest.ini".format(ip_expiry), log_file = package_metadata['filename'])
           for pid in pids:
+            # drush -u 1 eval "module_load_include('inc', 'islandora_ip_embargo', 'includes/utilities'); islandora_ip_embargo_set_embargo('islandora:8', 2);"
+            # drush -u 1 eval "module_load_include('inc', 'islandora_ip_embargo', 'includes/utilities'); islandora_ip_embargo_set_embargo('islandora:9', 2, strtotime('2022-12-31'));"
+            # module_load_cmd = "module_load_include('inc', 'islandora_ip_embargo', 'includes/utilities');"
+            # ip_embargo_cmd = "islandora_ip_embargo_set_embargo('islandora:8', 2);"
+            # ip_embargo_cmd = module_load_cmd + ip_embargo_cmd
+            # drushcmd = "drush --root=/var/www/html/ -u 1 eval ip_embargo_cmd 2>&1".format()
             log("{0} ip embargo applied to {1}".format(ip_expiry, pid), log_file = package_metadata['filename'])
         
         if 'scholar_expiry' in package_metadata and 'scholar_type' in package_metadata:
@@ -520,6 +526,14 @@ def package_ingest(package_metadata):
           scholar_type = package_metadata['scholar_type']
           log("{0} {1} scholar embargo detected from manifest.ini".format(scholar_expiry, scholar_type), log_file = package_metadata['filename'])
           for pid in pids:
+            # drush -u 1 eval "islandora_scholar_embargo_set_embargo('islandora:1');" # object indefinite
+            # drush -u 1 eval "islandora_scholar_embargo_set_embargo('islandora:2', array('OBJ'));" # datastream indefinite
+            # drush -u 1 eval "islandora_scholar_embargo_set_embargo('islandora:2', array('OBJ'), '2022-12-31');" # datastream terminal
+            # drush -u 1 eval "islandora_scholar_embargo_set_embargo('islandora:3', NULL, '2022-12-31');" # object terminal
+            # scholar_embargo_cmd = "islandora_scholar_embargo_set_embargo('islandora:1');" 
+            # drushcmd = "drush --root=/var/www/html/ -u 1 eval scholar_embargo_cmd 2>&1".format()
+            # drush_preprocess_exec = drush_exec.copy()
+            # drush_preprocess_exec.append(drushcmd)
             log("{0} {1} scholar embargo applied to {2}".format(scholar_expiry, scholar_type, pid), log_file = package_metadata['filename'])
  
         move_s3_file("s3://{0}/new/{1}".format(s3_path, package_metadata['filename']), "s3://{0}/done/{1}".format(s3_path, package_metadata['filename']))
