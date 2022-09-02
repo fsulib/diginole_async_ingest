@@ -345,6 +345,20 @@ def validate_package(package_name):
           output = output.decode('utf-8').split('\n')
           if output[0] != package_metadata['parent_collection']:
             package_errors.append("manifest.ini parent_collection {0} does not exist".format(package_metadata['parent_collection']))
+      if 'ip_embargo' in manifest.sections():
+        if 'ip_expiry' in manifest['ip_embargo'].keys():
+          package_metadata['ip_expiry'] = manifest['ip_embargo']['ip_expiry'] 
+        else: 
+          package_errors.append('manifest.ini [ip_embargo] section missing ip_expiry key')
+      if 'scholar_embargo' in manifest.sections():
+        if 'scholar_expiry' in manifest['scholar_embargo'].keys():
+          package_metadata['scholar_expiry'] = manifest['scholar_embargo']['scholar_expiry'] 
+        else: 
+          package_errors.append('manifest.ini [scholar_embargo] section missing scholar_expiry key')
+        if 'scholar_type' in manifest['scholar_embargo'].keys():
+          package_metadata['scholar_type'] = manifest['scholar_embargo']['scholar_type'] 
+        else: 
+          package_errors.append('manifest.ini [scholar_embargo] section missing scholar_type key')
       validatable_package_contents.remove('manifest.ini')
 
     xmlfiles = []
@@ -412,6 +426,7 @@ def validate_package(package_name):
     move_s3_file("s3://{0}/new/{1}".format(s3_path, package_name), "s3://{0}/error/{1}".format(s3_path, package_name))
     move_s3_file("{0}/{1}.log".format(package_path, package_name), "s3://{0}/error/{1}.log".format(s3_path, package_name))
     os.system("rm {0}/{1} {2}".format(package_path, package_name, silence_output))
+    os.system("rm {0}/{1}.validate {2}".format(package_path, package_name, silence_output))
     log("Package and log data moved to s3://{0}/error/.".format(s3_path), log_file = False)
     package_metadata['stop_time'] = get_current_time()
     write_to_drupal_log(package_metadata['start_time'], package_metadata['stop_time'], package_metadata['filename'], 'Invalid', invalid_logmsg)
@@ -493,6 +508,20 @@ def package_ingest(package_metadata):
         package_metadata['status'] = 'ingested'
         log("Ingested, produced PIDs: {0}".format(pidstring), log_file = package_metadata['filename'])
         log("Ingestion produced the following log output:\n{0}".format(logstring), log_file = package_metadata['filename'])
+
+        if 'ip_expiry' in package_metadata:
+          ip_expiry = package_metadata['ip_expiry']
+          log("{0} ip embargo detected from manifest.ini".format(ip_expiry), log_file = package_metadata['filename'])
+          for pid in pids:
+            log("{0} ip embargo applied to {1}".format(ip_expiry, pid), log_file = package_metadata['filename'])
+        
+        if 'scholar_expiry' in package_metadata and 'scholar_type' in package_metadata:
+          scholar_expiry = package_metadata['scholar_expiry']
+          scholar_type = package_metadata['scholar_type']
+          log("{0} {1} scholar embargo detected from manifest.ini".format(scholar_expiry, scholar_type), log_file = package_metadata['filename'])
+          for pid in pids:
+            log("{0} {1} scholar embargo applied to {2}".format(scholar_expiry, scholar_type, pid), log_file = package_metadata['filename'])
+ 
         move_s3_file("s3://{0}/new/{1}".format(s3_path, package_metadata['filename']), "s3://{0}/done/{1}".format(s3_path, package_metadata['filename']))
         move_s3_file("{0}/{1}.preprocess".format(package_path, package_metadata['filename']), "s3://{0}/done/{1}.preprocess".format(s3_path, package_metadata['filename']))
         move_s3_file("{0}/{1}.log".format(package_path, package_metadata['filename']), "s3://{0}/done/{1}.log".format(s3_path, package_metadata['filename']))
