@@ -345,6 +345,8 @@ def validate_package(package_name):
           output = output.decode('utf-8').split('\n')
           if output[0] != package_metadata['parent_collection']:
             package_errors.append("manifest.ini parent_collection {0} does not exist".format(package_metadata['parent_collection']))
+        if 'register_doi' in manifest['package'].keys():
+          package_metadata['register_doi'] = manifest['package']['register_doi']
       if 'ip_embargo' in manifest.sections():
         if 'ip_expiry' in manifest['ip_embargo'].keys():
           package_metadata['ip_expiry'] = manifest['ip_embargo']['ip_expiry'] 
@@ -547,6 +549,19 @@ def package_ingest(package_metadata):
             output = subprocess.check_output(docker_drush_exec)
             output = output.decode('utf-8').split('\n')
             log("Scholar embargo of type '{0}' with an expiry of '{1}' applied to {2}".format(scholar_type, scholar_expiry, pid), log_file = package_metadata['filename'])
+        if 'register_doi' in package_metadata:
+          doi = package_metadata['register_doi']
+          if len(pids) != 1:
+            log("DOI '{0}' cannot be registered, package produced {1} PIDs.".format(doi, len(pids)), log_file = package_metadata['filename'])
+          else:
+            pid = pids[0]
+            doi_registration_cmd = "diginole_purlz_register_doi('{0}', '{1}');".format(pid, doi)
+            drushcmd = "drush --root=/var/www/html/ -u 1 eval \"{0}\"".format(doi_registration_cmd)
+            docker_drush_exec = docker_drush_exec_original.copy()
+            docker_drush_exec.append(drushcmd)
+            output = subprocess.check_output(docker_drush_exec)
+            output = output.decode('utf-8').split('\n')
+            log("DOI '{0}' registered for {1}".format(doi, pid), log_file = package_metadata['filename'])
         move_s3_file("s3://{0}/new/{1}".format(s3_path, package_metadata['filename']), "s3://{0}/done/{1}".format(s3_path, package_metadata['filename']))
         move_s3_file("{0}/{1}.preprocess".format(package_path, package_metadata['filename']), "s3://{0}/done/{1}.preprocess".format(s3_path, package_metadata['filename']))
         move_s3_file("{0}/{1}.log".format(package_path, package_metadata['filename']), "s3://{0}/done/{1}.log".format(s3_path, package_metadata['filename']))
