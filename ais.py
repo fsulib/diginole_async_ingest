@@ -555,7 +555,7 @@ def package_ingest(package_metadata):
             log("DOI '{0}' cannot be registered, package produced {1} PIDs.".format(doi, len(pids)), log_file = package_metadata['filename'])
           else:
             pid = pids[0]
-            doi_registration_cmd = "diginole_purlz_register_doi('{0}', '{1}');".format(pid, doi)
+            doi_registration_cmd = "module_load_include('inc', 'diginole_purlz', 'includes/utilities'); diginole_purlz_register_doi('{0}', '{1}');".format(pid, doi)
             drushcmd = "drush --root=/var/www/html/ -u 1 eval \"{0}\"".format(doi_registration_cmd)
             docker_drush_exec = docker_drush_exec_original.copy()
             docker_drush_exec.append(drushcmd)
