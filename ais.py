@@ -561,7 +561,6 @@ def package_ingest(package_metadata):
             docker_drush_exec.append(drushcmd)
             output = subprocess.check_output(docker_drush_exec)
             output = output.decode('utf-8').split('\n')
-            log("DOI '{0}' registered for {1}".format(doi, pid), log_file = package_metadata['filename'])
         move_s3_file("s3://{0}/new/{1}".format(s3_path, package_metadata['filename']), "s3://{0}/done/{1}".format(s3_path, package_metadata['filename']))
         move_s3_file("{0}/{1}.preprocess".format(package_path, package_metadata['filename']), "s3://{0}/done/{1}.preprocess".format(s3_path, package_metadata['filename']))
         move_s3_file("{0}/{1}.log".format(package_path, package_metadata['filename']), "s3://{0}/done/{1}.log".format(s3_path, package_metadata['filename']))
