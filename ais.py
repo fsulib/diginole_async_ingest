@@ -555,12 +555,12 @@ def package_ingest(package_metadata):
             log("DOI '{0}' cannot be registered, package produced {1} PIDs.".format(doi, len(pids)), log_file = package_metadata['filename'])
           else:
             pid = pids[0]
-            doi_registration_cmd = "module_load_include('inc', 'diginole_purlz', 'includes/utilities'); diginole_purlz_register_doi('{0}', '{1}');".format(pid, doi)
-            drushcmd = "drush --root=/var/www/html/ -u 1 eval \"{0}\"".format(doi_registration_cmd)
+            drushcmd = "drush --root=/var/www/html/ -u 1 diginole_purlz_register_doi {0} {1}".format(pid, doi)
             docker_drush_exec = docker_drush_exec_original.copy()
             docker_drush_exec.append(drushcmd)
             output = subprocess.check_output(docker_drush_exec)
             output = output.decode('utf-8').split('\n')
+            log("DOI registration complete with the following output:\n{0}".format(output), log_file = package_metadata['filename'])
         move_s3_file("s3://{0}/new/{1}".format(s3_path, package_metadata['filename']), "s3://{0}/done/{1}".format(s3_path, package_metadata['filename']))
         move_s3_file("{0}/{1}.preprocess".format(package_path, package_metadata['filename']), "s3://{0}/done/{1}.preprocess".format(s3_path, package_metadata['filename']))
         move_s3_file("{0}/{1}.log".format(package_path, package_metadata['filename']), "s3://{0}/done/{1}.log".format(s3_path, package_metadata['filename']))
