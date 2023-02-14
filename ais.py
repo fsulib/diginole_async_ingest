@@ -18,7 +18,7 @@ import zipfile
 # Variables
 silence_output = '2>&1 >/dev/null'
 apache_name = os.getenv('APACHE_CONTAINER_NAME')
-drush_exec = ['docker', 'exec', apache_name, 'bash', '-c']
+docker_drush_exec_original = ['docker', 'exec', apache_name, 'bash', '-c']
 s3_wait = int(os.getenv('AIS_S3WAIT'))
 s3_bucket = os.getenv('AIS_S3BUCKET')
 s3_path = "{0}/diginole/ais".format(s3_bucket)
@@ -79,9 +79,9 @@ def update_diginole_ais_backlog_info():
     backlog_string = '0'
     
   drushcmd = "drush --root=/var/www/html vset diginole_ais_process_backlog {0} {1}".format(backlog_string, silence_output)
-  drush_vset = drush_exec.copy()
-  drush_vset.append(drushcmd)
-  output = subprocess.check_output(drush_vset)
+  docker_drush_exec = docker_drush_exec_original.copy()
+  docker_drush_exec.append(drushcmd)
+  output = subprocess.check_output(docker_drush_exec)
 
 def write_to_drupal_log(start_time, stop_time, package_name, package_status, message):
   current_time = get_current_time()
@@ -131,15 +131,15 @@ def get_iid_exempt_cmodels():
 
 def set_diginole_ais_process_status(value):
   drushcmd = "drush --root=/var/www/html vset diginole_ais_process_status {1} {2}".format(apache_name, value, silence_output)
-  drush_vset = drush_exec.copy()
-  drush_vset.append(drushcmd)
-  output = subprocess.check_output(drush_vset)
+  docker_drush_exec = docker_drush_exec_original.copy()
+  docker_drush_exec.append(drushcmd)
+  output = subprocess.check_output(docker_drush_exec)
 
 def get_diginole_ais_pause_status():
   drushcmd = "drush --root=/var/www/html vget diginole_ais_pause"
-  drush_vget = drush_exec.copy()
-  drush_vget.append(drushcmd)
-  output = subprocess.check_output(drush_vget)
+  docker_drush_exec = docker_drush_exec_original.copy()
+  docker_drush_exec.append(drushcmd)
+  output = subprocess.check_output(docker_drush_exec)
   output = output.decode("utf-8")
   output = output.rstrip()
   output = output.lstrip('diginole_ais_pause: ')
@@ -339,12 +339,28 @@ def validate_package(package_name):
         else: 
           package_metadata['parent_collection'] = manifest['package']['parent_collection']
           drushcmd = 'drush --root=/var/www/html/ php-eval "echo islandora_object_load(\'{0}\')->id;"'.format(package_metadata['parent_collection'])
-          drush_parent_check = drush_exec.copy()
-          drush_parent_check.append(drushcmd)
-          output = subprocess.check_output(drush_parent_check)
+          docker_drush_exec = docker_drush_exec_original.copy()
+          docker_drush_exec.append(drushcmd)
+          output = subprocess.check_output(docker_drush_exec)
           output = output.decode('utf-8').split('\n')
           if output[0] != package_metadata['parent_collection']:
             package_errors.append("manifest.ini parent_collection {0} does not exist".format(package_metadata['parent_collection']))
+        if 'register_doi' in manifest['package'].keys():
+          package_metadata['register_doi'] = manifest['package']['register_doi']
+      if 'ip_embargo' in manifest.sections():
+        if 'ip_expiry' in manifest['ip_embargo'].keys():
+          package_metadata['ip_expiry'] = manifest['ip_embargo']['ip_expiry'] 
+        else: 
+          package_errors.append('manifest.ini [ip_embargo] section missing ip_expiry key')
+      if 'scholar_embargo' in manifest.sections():
+        if 'scholar_expiry' in manifest['scholar_embargo'].keys():
+          package_metadata['scholar_expiry'] = manifest['scholar_embargo']['scholar_expiry'] 
+        else: 
+          package_errors.append('manifest.ini [scholar_embargo] section missing scholar_expiry key')
+        if 'scholar_type' in manifest['scholar_embargo'].keys():
+          package_metadata['scholar_type'] = manifest['scholar_embargo']['scholar_type'] 
+        else: 
+          package_errors.append('manifest.ini [scholar_embargo] section missing scholar_type key')
       validatable_package_contents.remove('manifest.ini')
 
     xmlfiles = []
@@ -412,6 +428,7 @@ def validate_package(package_name):
     move_s3_file("s3://{0}/new/{1}".format(s3_path, package_name), "s3://{0}/error/{1}".format(s3_path, package_name))
     move_s3_file("{0}/{1}.log".format(package_path, package_name), "s3://{0}/error/{1}.log".format(s3_path, package_name))
     os.system("rm {0}/{1} {2}".format(package_path, package_name, silence_output))
+    os.system("rm {0}/{1}.validate {2}".format(package_path, package_name, silence_output))
     log("Package and log data moved to s3://{0}/error/.".format(s3_path), log_file = False)
     package_metadata['stop_time'] = get_current_time()
     write_to_drupal_log(package_metadata['start_time'], package_metadata['stop_time'], package_metadata['filename'], 'Invalid', invalid_logmsg)
@@ -433,11 +450,11 @@ def package_preprocess(package_metadata):
     drushcmd = "drush --root=/var/www/html/ -u {0} ibobsp --parent={1} --scan_target={2}/{3}.preprocess 2>&1".format(drupaluid, package_metadata['parent_collection'], package_path, package_metadata['filename'])
   else:
     drushcmd = "drush --root=/var/www/html/ -u {0} ibsp --type=zip --parent={1} --content_models={2} --scan_target={3}/{4}.preprocess 2>&1".format(drupaluid, package_metadata['parent_collection'], package_metadata['content_model'], package_path, package_metadata['filename'])
-  drush_preprocess_exec = drush_exec.copy()
-  drush_preprocess_exec.append(drushcmd)
+  docker_drush_exec = docker_drush_exec_original.copy()
+  docker_drush_exec.append(drushcmd)
   wait_for_stack_to_stabilize(package_metadata['filename'])
   try:
-    output = subprocess.check_output(drush_preprocess_exec)
+    output = subprocess.check_output(docker_drush_exec)
     output = output.decode('utf-8').strip().split()
     package_metadata['status'] = 'preprocessed'
     if package_metadata['content_model'] in ['islandora:bookCModel', 'islandora:newspaperIssueCModel']:
@@ -461,11 +478,11 @@ def package_preprocess(package_metadata):
 def package_ingest(package_metadata):
   if package_metadata['status'] != 'failed':
     drushcmd = "drush --root=/var/www/html/ -u 1 ibi --ingest_set={0} 2>&1".format(package_metadata['batch_set_id'])
-    drush_process_exec = drush_exec.copy()
-    drush_process_exec.append(drushcmd)
+    docker_drush_exec = docker_drush_exec_original.copy()
+    docker_drush_exec.append(drushcmd)
     wait_for_stack_to_stabilize(package_metadata['filename'])
     try:
-      output = subprocess.check_output(drush_process_exec)
+      output = subprocess.check_output(docker_drush_exec)
       output = output.decode('utf-8').split('\n')
       pids = []
       loginfo = []
@@ -493,6 +510,56 @@ def package_ingest(package_metadata):
         package_metadata['status'] = 'ingested'
         log("Ingested, produced PIDs: {0}".format(pidstring), log_file = package_metadata['filename'])
         log("Ingestion produced the following log output:\n{0}".format(logstring), log_file = package_metadata['filename'])
+        if 'ip_expiry' in package_metadata:
+          ip_expiry = package_metadata['ip_expiry']
+          log("IP embargo with expiry of '{0}' detected in manifest.ini".format(ip_expiry), log_file = package_metadata['filename'])
+          for pid in pids:
+            if ip_expiry != 'indefinite':
+              ip_embargo_cmd = "islandora_ip_embargo_set_embargo('{0}', 2, strtotime('{1}'));".format(pid, ip_expiry)
+            else:
+              ip_embargo_cmd = "islandora_ip_embargo_set_embargo('{0}', 2);".format(pid)
+            module_load_cmd = "module_load_include('inc', 'islandora_ip_embargo', 'includes/utilities');"
+            ip_embargo_cmd = module_load_cmd + ip_embargo_cmd
+            drushcmd = "drush --root=/var/www/html/ -u 1 eval \"{0}\"".format(ip_embargo_cmd)
+            docker_drush_exec = docker_drush_exec_original.copy()
+            docker_drush_exec.append(drushcmd)
+            output = subprocess.check_output(docker_drush_exec)
+            output = output.decode('utf-8').split('\n')
+            log("IP embargo with expiry of '{0}' applied to {1}".format(ip_expiry, pid), log_file = package_metadata['filename'])
+        if 'scholar_expiry' in package_metadata and 'scholar_type' in package_metadata:
+          scholar_expiry = package_metadata['scholar_expiry']
+          scholar_type = package_metadata['scholar_type']
+          log("Scholar embargo of type '{0}' with an expiry of '{1}' detected from manifest.ini".format(scholar_type, scholar_expiry), log_file = package_metadata['filename'])
+          for pid in pids:
+            if scholar_type == 'object':
+              if scholar_expiry != 'indefinite':
+                scholar_embargo_cmd = "islandora_scholar_embargo_set_embargo('{0}', NULL, '{1}');".format(pid, scholar_expiry)
+              else:
+                scholar_embargo_cmd = "islandora_scholar_embargo_set_embargo('{0}');".format(pid)
+            else:
+              datastreams = scholar_type.replace(" ", "").split(",")
+              for datastream in datastreams:
+                if scholar_expiry != 'indefinite':
+                  scholar_embargo_cmd = "islandora_scholar_embargo_set_embargo('{0}', array('{1}'), '{2}');".format(pid, datastream, scholar_expiry)
+                else:
+                  scholar_embargo_cmd = "islandora_scholar_embargo_set_embargo('{0}', array('{1}'));".format(pid, datastream)
+            drushcmd = "drush --root=/var/www/html/ -u 1 eval \"{0}\"".format(scholar_embargo_cmd)
+            docker_drush_exec = docker_drush_exec_original.copy()
+            docker_drush_exec.append(drushcmd)
+            output = subprocess.check_output(docker_drush_exec)
+            output = output.decode('utf-8').split('\n')
+            log("Scholar embargo of type '{0}' with an expiry of '{1}' applied to {2}".format(scholar_type, scholar_expiry, pid), log_file = package_metadata['filename'])
+        if 'register_doi' in package_metadata:
+          doi = package_metadata['register_doi']
+          if len(pids) != 1:
+            log("DOI '{0}' cannot be registered, package produced {1} PIDs.".format(doi, len(pids)), log_file = package_metadata['filename'])
+          else:
+            pid = pids[0]
+            drushcmd = "drush --root=/var/www/html/ -u 1 diginole_purlz_register_doi {0} {1}".format(pid, doi)
+            docker_drush_exec = docker_drush_exec_original.copy()
+            docker_drush_exec.append(drushcmd)
+            output = subprocess.check_output(docker_drush_exec)
+            output = output.decode('utf-8').split('\n')
         move_s3_file("s3://{0}/new/{1}".format(s3_path, package_metadata['filename']), "s3://{0}/done/{1}".format(s3_path, package_metadata['filename']))
         move_s3_file("{0}/{1}.preprocess".format(package_path, package_metadata['filename']), "s3://{0}/done/{1}.preprocess".format(s3_path, package_metadata['filename']))
         move_s3_file("{0}/{1}.log".format(package_path, package_metadata['filename']), "s3://{0}/done/{1}.log".format(s3_path, package_metadata['filename']))
