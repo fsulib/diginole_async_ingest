@@ -194,13 +194,14 @@ def create_preprocess_package(package_metadata):
   validatable_package.close()
   preprocess_package.close()
   os.system('rm {0}/{1}'.format(package_path, validatable_package_name))
-  if package_metadata['content_model'] in ['islandora:bookCModel', 'islandora:newspaperIssueCModel']:
+  if package_metadata['content_model'] in ['islandora:bookCModel', 'islandora:newspaperIssueCModel', 'islandora:compoundCModel']:
     package_basename = get_file_basename(package_metadata['filename'])
     package_folder = '{0}/{1}'.format(package_path, package_basename) 
     os.system('mkdir {0}'.format(package_folder))
     os.system('mv {0}/{1}.preprocess {2}'.format(package_path, package_metadata['filename'], package_folder))
     os.system('unzip {0}/{1}.preprocess -d {0}/ {2}'.format(package_folder, package_metadata['filename'], silence_output))
     os.system('rm {0}/{1}.preprocess'.format(package_folder, package_metadata['filename']))
+
     package_files = glob.glob("{0}/*".format(package_folder))
     package_page_filenames = []
     for package_file in package_files:
@@ -361,6 +362,17 @@ def validate_package(package_name):
           package_metadata['scholar_type'] = manifest['scholar_embargo']['scholar_type'] 
         else: 
           package_errors.append('manifest.ini [scholar_embargo] section missing scholar_type key')
+      if 'compound' in manifest.sections():
+        if 'parent' in manifest['compound'].keys():
+          package_metadata['compound_parent'] = manifest['compound']['parent'] 
+        else: 
+          package_errors.append('manifest.ini [compound] section missing parent key')
+        if 'children' in manifest['compound'].keys():
+          package_metadata['compound_children'] = manifest['compound']['children'] 
+        else: 
+          package_errors.append('manifest.ini [compound] section missing children key')
+        if 'pdfmap' in manifest['compound'].keys():
+          package_metadata['compound_pdfmap'] = manifest['compound']['pdfmap'] 
       validatable_package_contents.remove('manifest.ini')
 
     xmlfiles = []
@@ -448,6 +460,10 @@ def package_preprocess(package_metadata):
     drushcmd = "drush --root=/var/www/html/ -u {0} inbp --type=zip --parent={1} --scan_target={2}/{3}.preprocess --namespace=fsu --output_set_id 2>&1".format(drupaluid, package_metadata['parent_collection'], package_path, package_metadata['filename'])
   elif package_metadata['content_model'] == 'islandora:binaryObjectCModel':
     drushcmd = "drush --root=/var/www/html/ -u {0} ibobsp --parent={1} --scan_target={2}/{3}.preprocess 2>&1".format(drupaluid, package_metadata['parent_collection'], package_path, package_metadata['filename'])
+  elif package_metadata['content_model'] == 'islandora:compoundCModel':
+    print('Almost.')
+    #drushcmd = "drush --root=/var/www/html/ -u {0} icbp --parent={1} --scan_target={2}/{3}.preprocess --namespace=fsu 2>&1".format(drupaluid, package_metadata['parent_collection'], package_path, package_metadata['filename'])
+
   else:
     drushcmd = "drush --root=/var/www/html/ -u {0} ibsp --type=zip --parent={1} --content_models={2} --scan_target={3}/{4}.preprocess 2>&1".format(drupaluid, package_metadata['parent_collection'], package_metadata['content_model'], package_path, package_metadata['filename'])
   docker_drush_exec = docker_drush_exec_original.copy()
@@ -591,9 +607,10 @@ def process_available_s3_packages():
       package_name = download_oldest_new_package()
       package_metadata = validate_package(package_name)
       if package_metadata:
-        package_metadata = package_preprocess(package_metadata)
-        package_metadata = package_ingest(package_metadata)
-      process_available_s3_packages()
+        create_preprocess_package(package_metadata) 
+        #package_metadata = package_preprocess(package_metadata)
+        #package_metadata = package_ingest(package_metadata)
+      #process_available_s3_packages()
 
 
 # Main function
