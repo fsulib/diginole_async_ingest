@@ -510,6 +510,15 @@ def package_ingest(package_metadata):
         package_metadata['status'] = 'ingested'
         log("Ingested, produced PIDs: {0}".format(pidstring), log_file = package_metadata['filename'])
         log("Ingestion produced the following log output:\n{0}".format(logstring), log_file = package_metadata['filename'])
+        if package_metadata['content_model'] in ['islandora:bookCModel', 'islandora:newspaperIssueCModel']:
+          parent_pid = pids[-1]
+          log("Generating META_OCR datastream for parent object {0} ".format(parent_pid), log_file = package_metadata['filename'])
+          drushcmd = "drush --root=/var/www/html/ -u 1 dmoi --pid={0}".format(parent_pid)
+          docker_drush_exec = docker_drush_exec_original.copy()
+          docker_drush_exec.append(drushcmd)
+          output = subprocess.check_output(docker_drush_exec)
+          output = output.decode('utf-8').split('\n')
+          log("Generation of META_OCR datastream finished".format(parent_pid), log_file = package_metadata['filename'])
         if 'ip_expiry' in package_metadata:
           ip_expiry = package_metadata['ip_expiry']
           log("IP embargo with expiry of '{0}' detected in manifest.ini".format(ip_expiry), log_file = package_metadata['filename'])
