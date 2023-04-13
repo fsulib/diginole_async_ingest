@@ -447,7 +447,7 @@ def package_preprocess(package_metadata):
   elif package_metadata['content_model'] == 'islandora:newspaperIssueCModel':
     drushcmd = "drush --root=/var/www/html/ -u {0} inbp --type=zip --parent={1} --scan_target={2}/{3}.preprocess --namespace=fsu --output_set_id 2>&1".format(drupaluid, package_metadata['parent_collection'], package_path, package_metadata['filename'])
   elif package_metadata['content_model'] == 'islandora:binaryObjectCModel':
-    drushcmd = "drush --root=/var/www/html/ -u {0} ibobsp --parent={1} --scan_target={2}/{3}.preprocess 2>&1".format(drupaluid, package_metadata['parent_collection'], package_path, package_metadata['filename'])
+    drushcmd = "drush --root=/var/www/html/ -u {0} ibobsp --parent={1} --scan_target={2}/{3}.preprocess --namespace=fsu 2>&1".format(drupaluid, package_metadata['parent_collection'], package_path, package_metadata['filename'])
   else:
     drushcmd = "drush --root=/var/www/html/ -u {0} ibsp --type=zip --parent={1} --content_models={2} --scan_target={3}/{4}.preprocess 2>&1".format(drupaluid, package_metadata['parent_collection'], package_metadata['content_model'], package_path, package_metadata['filename'])
   docker_drush_exec = docker_drush_exec_original.copy()
