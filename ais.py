@@ -33,8 +33,8 @@ cmodels = {
   'islandora:sp-audioCModel': ['wav', 'mp3'],
   'islandora:sp_videoCModel': ['mp4', 'mov', 'qt', 'm4v', 'avi', 'mkv'],
   'islandora:binaryObjectCModel': [],
-  'islandora:bookCModel': ['tif', 'tiff', 'jp2', 'jpg2'],
-  'islandora:newspaperIssueCModel': ['tif', 'tiff', 'jp2', 'jpg2'],
+  'islandora:bookCModel': ['jpg', 'jpeg', 'tif', 'tiff', 'jp2', 'jpg2'],
+  'islandora:newspaperIssueCModel': ['jpg', 'jpeg', 'tif', 'tiff', 'jp2', 'jpg2'],
   #'islandora:compoundCModel',
 }
 
