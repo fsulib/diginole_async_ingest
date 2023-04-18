@@ -29,7 +29,7 @@ cmodels = {
   'ir:thesisCModel': ['pdf'],
   'ir:citationCModel': ['pdf'],
   'islandora:sp_basic_image': ['gif', 'png', 'jpg', 'jpeg', 'tif', 'tiff'],
-  'islandora:sp_large_image_cmodel': ['tif', 'tiff', 'jp2', 'jpg2'],
+  'islandora:sp_large_image_cmodel': ['jpg', 'jpeg', 'tif', 'tiff', 'jp2', 'jpg2'],
   'islandora:sp-audioCModel': ['wav', 'mp3'],
   'islandora:sp_videoCModel': ['mp4', 'mov', 'qt', 'm4v', 'avi', 'mkv'],
   'islandora:binaryObjectCModel': [],
