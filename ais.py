@@ -29,12 +29,12 @@ cmodels = {
   'ir:thesisCModel': ['pdf'],
   'ir:citationCModel': ['pdf'],
   'islandora:sp_basic_image': ['gif', 'png', 'jpg', 'jpeg', 'tif', 'tiff'],
-  'islandora:sp_large_image_cmodel': ['tif', 'tiff', 'jp2', 'jpg2'],
+  'islandora:sp_large_image_cmodel': ['jpg', 'jpeg', 'tif', 'tiff', 'jp2', 'jpg2'],
   'islandora:sp-audioCModel': ['wav', 'mp3'],
   'islandora:sp_videoCModel': ['mp4', 'mov', 'qt', 'm4v', 'avi', 'mkv'],
   'islandora:binaryObjectCModel': [],
-  'islandora:bookCModel': ['tif', 'tiff', 'jp2', 'jpg2'],
-  'islandora:newspaperIssueCModel': ['tif', 'tiff', 'jp2', 'jpg2'],
+  'islandora:bookCModel': ['jpg', 'jpeg', 'tif', 'tiff', 'jp2', 'jpg2'],
+  'islandora:newspaperIssueCModel': ['jpg', 'jpeg', 'tif', 'tiff', 'jp2', 'jpg2'],
   'islandora:compoundCModel': [],
 }
 
@@ -194,6 +194,7 @@ def create_preprocess_package(package_metadata):
   validatable_package.close()
   preprocess_package.close()
   os.system('rm {0}/{1}'.format(package_path, validatable_package_name))
+
   if package_metadata['content_model'] in ['islandora:bookCModel', 'islandora:newspaperIssueCModel', 'islandora:compoundCModel']:
     package_basename = get_file_basename(package_metadata['filename'])
     package_folder = '{0}/{1}'.format(package_path, package_basename) 
@@ -201,24 +202,57 @@ def create_preprocess_package(package_metadata):
     os.system('mv {0}/{1}.preprocess {2}'.format(package_path, package_metadata['filename'], package_folder))
     os.system('unzip {0}/{1}.preprocess -d {0}/ {2}'.format(package_folder, package_metadata['filename'], silence_output))
     os.system('rm {0}/{1}.preprocess'.format(package_folder, package_metadata['filename']))
-
     package_files = glob.glob("{0}/*".format(package_folder))
-    package_page_filenames = []
-    for package_file in package_files:
-      package_file_filename = package_file.split('/')[-1]
-      if get_file_extension(package_file_filename) != 'xml':
-        package_page_filenames.append(package_file_filename)
-    sorted_package_pages = sorted(package_page_filenames)
-    for index, filename in enumerate(sorted_package_pages):
-      filename_extension = get_file_extension(filename)
-      adjusted_index = index + 1
-      page_folder = "{0}/{1}".format(package_folder, adjusted_index)
-      os.system("mkdir {0}".format(page_folder))
-      os.system("mv {0}/{1} {2}/OBJ.{3}".format(package_folder, filename, page_folder, filename_extension))
-    metadata_filename = glob.glob("{0}/*.xml".format(package_folder))[0].split("/")[-1]
-    os.system("mv {0}/{1} {0}/MODS.xml".format(package_folder, metadata_filename))
-    os.system("cd {0}; zip -r {1}.preprocess {2} {3}".format(package_path, package_metadata['filename'], package_folder.split('/')[-1], silence_output))
-    os.system("rm -rf {0}".format(package_folder))
+
+    if package_metadata['content_model'] in ['islandora:bookCModel', 'islandora:newspaperIssueCModel']:
+      package_page_filenames = []
+      for package_file in package_files:
+        package_file_filename = package_file.split('/')[-1]
+        if get_file_extension(package_file_filename) != 'xml':
+          package_page_filenames.append(package_file_filename)
+      sorted_package_pages = sorted(package_page_filenames)
+      for index, filename in enumerate(sorted_package_pages):
+        filename_extension = get_file_extension(filename)
+        adjusted_index = index + 1
+        page_folder = "{0}/{1}".format(package_folder, adjusted_index)
+        os.system("mkdir {0}".format(page_folder))
+        os.system("mv {0}/{1} {2}/OBJ.{3}".format(package_folder, filename, page_folder, filename_extension))
+      metadata_filename = glob.glob("{0}/*.xml".format(package_folder))[0].split("/")[-1]
+      os.system("mv {0}/{1} {0}/MODS.xml".format(package_folder, metadata_filename))
+
+    if package_metadata['content_model'] in ['islandora:compoundCModel']:
+      package_file_filenames = []
+      package_ordered_children = package_metadata['compound_children'].replace(' ', '').split(',')
+      wrapper_folder = "{0}/{1}".format(package_folder, package_metadata['compound_parent'])
+      os.system("mkdir {0}".format(wrapper_folder))
+      os.system("mv {0}/* {1}".format(package_folder, wrapper_folder))
+      for package_ordered_child in package_ordered_children:
+        child_folder = "{0}/{1}".format(wrapper_folder, package_ordered_child)
+        os.system("mkdir {0}".format(child_folder))
+
+      for package_file in package_files:
+        package_file_filename = package_file.split('/')[-1]
+        package_file_basename = get_file_basename(package_file_filename)
+        package_file_extension = get_file_extension(package_file_filename)
+        if package_file_filename == "{0}.xml".format(package_metadata['compound_parent']):
+          os.system("mv {0}/{1} {0}/MODS.xml".format(wrapper_folder, package_file_filename))
+        elif package_file_basename in package_ordered_children:
+          print(package_file_filename)
+          if package_file_extension == 'xml':
+            os.system("mv {0}/{1} {0}/{2}/MODS.xml".format(wrapper_folder, package_file_filename, package_file_basename))
+          else:
+            os.system("mv {0}/{1} {0}/{2}/OBJ.{3}".format(wrapper_folder, package_file_filename, package_file_basename, package_file_extension))
+
+      structure = open('{0}/structure.xml'.format(wrapper_folder), 'w+')
+      structure.write('<?xml version="1.0" encoding="utf-8"?>\n')
+      structure.write('<islandora_compound_object>\n')
+      for package_ordered_child in package_ordered_children:
+        structure.write('  <child content="{0}/{1}" />\n'.format(package_metadata['compound_parent'], package_ordered_child))
+      structure.write('</islandora_compound_object>\n')
+      structure.close()
+
+    #os.system("cd {0}; zip -r {1}.preprocess {2} {3}".format(package_path, package_metadata['filename'], package_folder.split('/')[-1], silence_output))
+    #os.system("rm -rf {0}".format(package_folder))
 
 
 # Dependent Functions
@@ -459,11 +493,9 @@ def package_preprocess(package_metadata):
   elif package_metadata['content_model'] == 'islandora:newspaperIssueCModel':
     drushcmd = "drush --root=/var/www/html/ -u {0} inbp --type=zip --parent={1} --scan_target={2}/{3}.preprocess --namespace=fsu --output_set_id 2>&1".format(drupaluid, package_metadata['parent_collection'], package_path, package_metadata['filename'])
   elif package_metadata['content_model'] == 'islandora:binaryObjectCModel':
-    drushcmd = "drush --root=/var/www/html/ -u {0} ibobsp --parent={1} --scan_target={2}/{3}.preprocess 2>&1".format(drupaluid, package_metadata['parent_collection'], package_path, package_metadata['filename'])
+    drushcmd = "drush --root=/var/www/html/ -u {0} ibobsp --parent={1} --scan_target={2}/{3}.preprocess --namespace=fsu 2>&1".format(drupaluid, package_metadata['parent_collection'], package_path, package_metadata['filename'])
   elif package_metadata['content_model'] == 'islandora:compoundCModel':
-    print('Almost.')
-    #drushcmd = "drush --root=/var/www/html/ -u {0} icbp --parent={1} --scan_target={2}/{3}.preprocess --namespace=fsu 2>&1".format(drupaluid, package_metadata['parent_collection'], package_path, package_metadata['filename'])
-
+    drushcmd = "drush --root=/var/www/html/ -u {0} icbp --parent={1} --scan_target={2}/{3}.preprocess --namespace=fsu 2>&1".format(drupaluid, package_metadata['parent_collection'], package_path, package_metadata['filename'])
   else:
     drushcmd = "drush --root=/var/www/html/ -u {0} ibsp --type=zip --parent={1} --content_models={2} --scan_target={3}/{4}.preprocess 2>&1".format(drupaluid, package_metadata['parent_collection'], package_metadata['content_model'], package_path, package_metadata['filename'])
   docker_drush_exec = docker_drush_exec_original.copy()
@@ -526,6 +558,15 @@ def package_ingest(package_metadata):
         package_metadata['status'] = 'ingested'
         log("Ingested, produced PIDs: {0}".format(pidstring), log_file = package_metadata['filename'])
         log("Ingestion produced the following log output:\n{0}".format(logstring), log_file = package_metadata['filename'])
+        if package_metadata['content_model'] in ['islandora:bookCModel', 'islandora:newspaperIssueCModel']:
+          parent_pid = pids[-1]
+          log("Generating FULL_TEXT datastream for parent object {0} ".format(parent_pid), log_file = package_metadata['filename'])
+          drushcmd = "drush --root=/var/www/html/ -u 1 dbnfi --pid={0}".format(parent_pid)
+          docker_drush_exec = docker_drush_exec_original.copy()
+          docker_drush_exec.append(drushcmd)
+          output = subprocess.check_output(docker_drush_exec)
+          output = output.decode('utf-8').split('\n')
+          log("Generation of FULL_TEXT datastream finished".format(parent_pid), log_file = package_metadata['filename'])
         if 'ip_expiry' in package_metadata:
           ip_expiry = package_metadata['ip_expiry']
           log("IP embargo with expiry of '{0}' detected in manifest.ini".format(ip_expiry), log_file = package_metadata['filename'])
@@ -607,7 +648,8 @@ def process_available_s3_packages():
       package_name = download_oldest_new_package()
       package_metadata = validate_package(package_name)
       if package_metadata:
-        create_preprocess_package(package_metadata) 
+        print(package_metadata) # Delete
+        create_preprocess_package(package_metadata) # Delete
         #package_metadata = package_preprocess(package_metadata)
         #package_metadata = package_ingest(package_metadata)
       #process_available_s3_packages()
