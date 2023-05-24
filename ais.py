@@ -14,7 +14,6 @@ import time
 import xml.etree.ElementTree
 import zipfile
 
-
 # Variables
 silence_output = '2>&1 >/dev/null'
 apache_name = os.getenv('APACHE_CONTAINER_NAME')
@@ -37,7 +36,6 @@ cmodels = {
   'islandora:newspaperIssueCModel': ['jpg', 'jpeg', 'tif', 'tiff', 'jp2', 'jpg2'],
   'islandora:compoundCModel': [],
 }
-
 
 # Independent Functions
 def write_pidfile():
@@ -231,7 +229,6 @@ def create_preprocess_package(package_metadata):
       for package_ordered_child in package_ordered_children:
         child_folder = "{0}/{1}".format(wrapper_folder, package_ordered_child)
         os.system("mkdir {0}".format(child_folder))
-
       for package_file in package_files:
         package_file_filename = package_file.split('/')[-1]
         package_file_basename = get_file_basename(package_file_filename)
@@ -243,7 +240,6 @@ def create_preprocess_package(package_metadata):
             os.system("mv {0}/{1} {0}/{2}/MODS.xml".format(wrapper_folder, package_file_filename, package_file_basename))
           else:
             os.system("mv {0}/{1} {0}/{2}/OBJ.{3}".format(wrapper_folder, package_file_filename, package_file_basename, package_file_extension))
-
       structure = open('{0}/structure.xml'.format(wrapper_folder), 'w+')
       structure.write('<?xml version="1.0" encoding="utf-8"?>\n')
       structure.write('<islandora_compound_object>\n')
@@ -254,8 +250,6 @@ def create_preprocess_package(package_metadata):
       preprocess_scan_target = "{0}.preprocess".format(package_folder)
       os.system("mv {0} {1}".format(package_folder, preprocess_scan_target))
       package_metadata['scan_target'] = preprocess_scan_target
-
-
 
 # Dependent Functions
 def list_new_packages():
@@ -312,7 +306,6 @@ def download_oldest_new_package():
   else:
     log("New package {0}/new/{1} detected and downloaded to {2}/{1}.".format(s3_path, oldest_new_package_name, package_path), log_file = oldest_new_package_name)
     return oldest_new_package_name
-
 
 def validate_package(package_name):
   current_time = get_current_time()
@@ -639,10 +632,8 @@ def package_ingest(package_metadata):
       package_metadata['stop_time'] = get_current_time()
       write_to_drupal_log(package_metadata['start_time'], package_metadata['stop_time'], package_metadata['filename'], 'Error', "Error encountered during ingestion, see s3://{0}/error/{1}.log for full error output.".format(s3_path, package_metadata['filename']))
       set_diginole_ais_process_status("Inactive")
-
   if package_metadata['content_model'] == 'islandora:compoundCModel':
     os.system("rm -rf {0}".format(package_metadata['scan_target']))
-
   return package_metadata
 
 def process_available_s3_packages():
@@ -659,7 +650,6 @@ def process_available_s3_packages():
         package_metadata = package_preprocess(package_metadata)
         package_metadata = package_ingest(package_metadata)
       process_available_s3_packages()
-
 
 # Main function
 def run():
