@@ -219,13 +219,15 @@ def create_preprocess_package(package_metadata):
         os.system("mv {0}/{1} {2}/OBJ.{3}".format(package_folder, filename, page_folder, filename_extension))
       metadata_filename = glob.glob("{0}/*.xml".format(package_folder))[0].split("/")[-1]
       os.system("mv {0}/{1} {0}/MODS.xml".format(package_folder, metadata_filename))
+      os.system("cd {0}; zip -r {1}.preprocess {2} {3}".format(package_path, package_metadata['filename'], package_folder.split('/')[-1], silence_output))
+      os.system("rm -rf {0}".format(package_folder))
 
     if package_metadata['content_model'] in ['islandora:compoundCModel']:
       package_file_filenames = []
       package_ordered_children = package_metadata['compound_children'].replace(' ', '').split(',')
       wrapper_folder = "{0}/{1}".format(package_folder, package_metadata['compound_parent'])
       os.system("mkdir {0}".format(wrapper_folder))
-      os.system("mv {0}/* {1}".format(package_folder, wrapper_folder))
+      os.system("mv {0}/*.* {1}".format(package_folder, wrapper_folder))
       for package_ordered_child in package_ordered_children:
         child_folder = "{0}/{1}".format(wrapper_folder, package_ordered_child)
         os.system("mkdir {0}".format(child_folder))
@@ -237,7 +239,6 @@ def create_preprocess_package(package_metadata):
         if package_file_filename == "{0}.xml".format(package_metadata['compound_parent']):
           os.system("mv {0}/{1} {0}/MODS.xml".format(wrapper_folder, package_file_filename))
         elif package_file_basename in package_ordered_children:
-          print(package_file_filename)
           if package_file_extension == 'xml':
             os.system("mv {0}/{1} {0}/{2}/MODS.xml".format(wrapper_folder, package_file_filename, package_file_basename))
           else:
@@ -250,9 +251,10 @@ def create_preprocess_package(package_metadata):
         structure.write('  <child content="{0}/{1}" />\n'.format(package_metadata['compound_parent'], package_ordered_child))
       structure.write('</islandora_compound_object>\n')
       structure.close()
+      preprocess_scan_target = "{0}.preprocess".format(package_folder)
+      os.system("mv {0} {1}".format(package_folder, preprocess_scan_target))
+      package_metadata['scan_target'] = preprocess_scan_target
 
-    #os.system("cd {0}; zip -r {1}.preprocess {2} {3}".format(package_path, package_metadata['filename'], package_folder.split('/')[-1], silence_output))
-    #os.system("rm -rf {0}".format(package_folder))
 
 
 # Dependent Functions
@@ -495,7 +497,8 @@ def package_preprocess(package_metadata):
   elif package_metadata['content_model'] == 'islandora:binaryObjectCModel':
     drushcmd = "drush --root=/var/www/html/ -u {0} ibobsp --parent={1} --scan_target={2}/{3}.preprocess --namespace=fsu 2>&1".format(drupaluid, package_metadata['parent_collection'], package_path, package_metadata['filename'])
   elif package_metadata['content_model'] == 'islandora:compoundCModel':
-    drushcmd = "drush --root=/var/www/html/ -u {0} icbp --parent={1} --scan_target={2}/{3}.preprocess --namespace=fsu 2>&1".format(drupaluid, package_metadata['parent_collection'], package_path, package_metadata['filename'])
+    drushcmd = "drush --root=/var/www/html/ -u {0} icbp --parent={1} --scan_target={2} --namespace=fsu 2>&1".format(drupaluid, package_metadata['parent_collection'], package_metadata['scan_target'])
+    os.system("zip -r {0}/{1}.preprocess {2} {3}".format(package_path, package_metadata['filename'], package_metadata['scan_target'], silence_output))
   else:
     drushcmd = "drush --root=/var/www/html/ -u {0} ibsp --type=zip --parent={1} --content_models={2} --scan_target={3}/{4}.preprocess 2>&1".format(drupaluid, package_metadata['parent_collection'], package_metadata['content_model'], package_path, package_metadata['filename'])
   docker_drush_exec = docker_drush_exec_original.copy()
@@ -619,6 +622,7 @@ def package_ingest(package_metadata):
             output = output.decode('utf-8').split('\n')
         move_s3_file("s3://{0}/new/{1}".format(s3_path, package_metadata['filename']), "s3://{0}/done/{1}".format(s3_path, package_metadata['filename']))
         move_s3_file("{0}/{1}.preprocess".format(package_path, package_metadata['filename']), "s3://{0}/done/{1}.preprocess".format(s3_path, package_metadata['filename']))
+
         move_s3_file("{0}/{1}.log".format(package_path, package_metadata['filename']), "s3://{0}/done/{1}.log".format(s3_path, package_metadata['filename']))
         log("Package and log data moved to s3://{0}/done/.".format(s3_path), log_file = False)
         package_metadata['stop_time'] = get_current_time()
@@ -635,6 +639,10 @@ def package_ingest(package_metadata):
       package_metadata['stop_time'] = get_current_time()
       write_to_drupal_log(package_metadata['start_time'], package_metadata['stop_time'], package_metadata['filename'], 'Error', "Error encountered during ingestion, see s3://{0}/error/{1}.log for full error output.".format(s3_path, package_metadata['filename']))
       set_diginole_ais_process_status("Inactive")
+
+  if package_metadata['content_model'] == 'islandora:compoundCModel':
+    os.system("rm -rf {0}".format(package_metadata['scan_target']))
+
   return package_metadata
 
 def process_available_s3_packages():
@@ -648,11 +656,9 @@ def process_available_s3_packages():
       package_name = download_oldest_new_package()
       package_metadata = validate_package(package_name)
       if package_metadata:
-        print(package_metadata) # Delete
-        create_preprocess_package(package_metadata) # Delete
-        #package_metadata = package_preprocess(package_metadata)
-        #package_metadata = package_ingest(package_metadata)
-      #process_available_s3_packages()
+        package_metadata = package_preprocess(package_metadata)
+        package_metadata = package_ingest(package_metadata)
+      process_available_s3_packages()
 
 
 # Main function
