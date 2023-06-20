@@ -556,7 +556,7 @@ def package_ingest(package_metadata):
         log("Ingestion produced the following log output:\n{0}".format(logstring), log_file = package_metadata['filename'])
         if package_metadata['content_model'] in ['islandora:bookCModel', 'islandora:newspaperIssueCModel']:
           parent_pid = pids[-1]
-          log("Generating FULL_TEXT datastream for parent object {0} ".format(parent_pid), log_file = package_metadata['filename'])
+          log("Generating FULL_TEXT datastream for parent object '{0}' ".format(parent_pid), log_file = package_metadata['filename'])
           drushcmd = "drush --root=/var/www/html/ -u 1 dbnifi --pid={0}".format(parent_pid)
           docker_drush_exec = docker_drush_exec_original.copy()
           docker_drush_exec.append(drushcmd)
@@ -605,7 +605,30 @@ def package_ingest(package_metadata):
         if 'register_doi' in package_metadata:
           doi = package_metadata['register_doi']
           if len(pids) != 1:
-            log("DOI '{0}' cannot be registered, package produced {1} PIDs.".format(doi, len(pids)), log_file = package_metadata['filename'])
+            if package_metadata['content_model'] in ['islandora:bookCModel', 'islandora:newspaperIssueCModel']:
+              pid = pids[-1]
+              log("Registering DOI for parent object '{0}'.".format(pid), log_file = False)
+              drushcmd = "drush --root=/var/www/html/ -u 1 diginole_purlz_register_doi {0} {1}".format(pid, doi)
+              docker_drush_exec = docker_drush_exec_original.copy()
+              docker_drush_exec.append(drushcmd)
+              output = subprocess.check_output(docker_drush_exec)
+              output = output.decode('utf-8').split('\n')
+            elif package_metadata['content_model'] in ['islandora:compoundCModel']:
+              pid = pids[0]
+              log("Seeking compound parent of '{0}' for DOI registration.".format(pid), log_file = False)
+              drushcmd = "drush --root=/var/www/html/ -u 1 dgcpo --pid={0}".format(pid)
+              docker_drush_exec = docker_drush_exec_original.copy()
+              docker_drush_exec.append(drushcmd)
+              output = subprocess.check_output(docker_drush_exec)
+              output = output.decode('utf-8').strip()
+              log("'{0}' has compound parent '{1}' for DOI registration.".format(pid, output), log_file = False)
+              drushcmd = "drush --root=/var/www/html/ -u 1 diginole_purlz_register_doi {0} {1}".format(pid, doi)
+              docker_drush_exec = docker_drush_exec_original.copy()
+              docker_drush_exec.append(drushcmd)
+              output = subprocess.check_output(docker_drush_exec)
+              output = output.decode('utf-8').split('\n')
+            else:
+              log("DOI '{0}' cannot be registered, multiple PIDs produced on an unsupported cmodel.".format(doi), log_file = package_metadata['filename'])
           else:
             pid = pids[0]
             drushcmd = "drush --root=/var/www/html/ -u 1 diginole_purlz_register_doi {0} {1}".format(pid, doi)
