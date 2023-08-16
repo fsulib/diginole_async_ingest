@@ -320,10 +320,13 @@ def validate_package(package_name):
   validatable_package_name = package_name + ".validate"
   original_package = zipfile.ZipFile("{0}/{1}".format(package_path, package_name), 'r')
   validatable_package = zipfile.ZipFile("{0}/{1}".format(package_path, validatable_package_name), 'w')
+  ignored_package_files = ['.DS_Store', 'Thumbs.db', 'thumbs.db']
   for item in original_package.infolist():
     buffer = original_package.read(item.filename)
-    if not item.filename.startswith('__MACOSX'):
+    if not item.filename.startswith('__MACOSX') and item.filename not in ignored_package_files:
         validatable_package.writestr(item, buffer)
+    else:
+      log("Superfluous file or subdirectory '{0}' detected, stripping from final ingest package.".format(item.filename), log_file = package_name)
   original_package.close()
   validatable_package.close()
   os.system('rm {0}/{1}'.format(package_path, package_name))
