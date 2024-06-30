@@ -23,6 +23,7 @@ s3_bucket = os.getenv('AIS_S3BUCKET')
 s3_path = "{0}/diginole/ais".format(s3_bucket)
 package_path = '/diginole_async_ingest/packages'
 pidfile = "/tmp/ais.pid"
+headers = {'User-Agent': 'DigiNole Asynchronous Ingest System (AIS)'}
 cmodels = {
   'islandora:sp_pdf': ['pdf'],
   'ir:thesisCModel': ['pdf'],
@@ -153,14 +154,14 @@ def check_if_iid_exists_elsewhere(iid):
 
 def check_if_apache_is_down():
   try: 
-    result = not requests.get('http://' + os.getenv('BASE_DOMAIN') + ':' + os.getenv('APACHE_EXTERNAL_PORT')).ok
+    result = not requests.get('http://' + os.getenv('BASE_DOMAIN') + ':' + os.getenv('APACHE_EXTERNAL_PORT'), headers=headers).ok
   except:
     result = True
   return result
 
 def check_if_fedora_is_down():
   try:
-    result = not requests.get('http://fedora.isle.lib.fsu.edu:8080').ok
+    result = not requests.get('http://fedora.isle.lib.fsu.edu:8080', headers=headers).ok
   except: 
     result = True
   return result
