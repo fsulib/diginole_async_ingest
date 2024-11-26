@@ -215,54 +215,31 @@ def create_preprocess_package(package_metadata):
         adjusted_index = index + 1
         page_folder = "{0}/{1}".format(package_folder, adjusted_index)
         os.system("mkdir {0}".format(page_folder))
-
-        # If tiff exists
+        
         tiff_page = "{0}/{1}.tif".format(package_folder, pagename)
-        print("TIFF page: {}".format(tiff_page))
         if os.path.exists(tiff_page):
-          print("{} detected, moving.".format(tiff_page))
           os.system("mv {0} {1}/OBJ.tif".format(tiff_page, page_folder))
-
-        # If JP2 exists
+          
         jp2_page = "{0}/{1}.jp2".format(package_folder, pagename)
-        print("JP2 page: {}".format(jp2_page))
         if os.path.exists(jp2_page):
-          print("{} detected, moving.".format(jp2_page))
           os.system("mv {0} {1}/JP2.jp2".format(jp2_page, page_folder))
-
-        # If JPG exists
+          
         jpg_page = "{0}/{1}.jpg".format(package_folder, pagename)
-        print("JPG page: {}".format(jpg_page))
         if os.path.exists(jpg_page):
-          print("{} detected, moving.".format(jpg_page))
           os.system("mv {0} {1}/JPG.jpg".format(jpg_page, page_folder))
-
-        # If TXT exists
+          
         txt_page = "{0}/{1}.txt".format(package_folder, pagename)
-        print("TXT page: {}".format(txt_page))
         if os.path.exists(txt_page):
-          print("{} detected, moving.".format(txt_page))
           os.system("mv {0} {1}/OCR.asc".format(txt_page, page_folder))
-
-        # If SHTML exists
+          
         shtml_page = "{0}/{1}.shtml".format(package_folder, pagename)
-        print("SHTML page: {}".format(shtml_page))
         if os.path.exists(shtml_page):
-          print("{} detected, moving.".format(shtml_page))
           os.system("mv {0} {1}/HOCR.shtml".format(shtml_page, page_folder))
-
+          
       metadata_filename = glob.glob("{0}/*.xml".format(package_folder))[0].split("/")[-1]
       os.system("mv {0}/{1} {0}/MODS.xml".format(package_folder, metadata_filename))
       os.system("cd {0}; zip -r {1}.preprocess {2} {3}".format(package_path, package_metadata['filename'], package_folder.split('/')[-1], silence_output))
       os.system("rm -rf {0}".format(package_folder))
-
-
-
-
-
-
-
-
 
     if package_metadata['content_model'] in ['islandora:compoundCModel']:
       package_file_filenames = []
