@@ -34,8 +34,8 @@ cmodels = {
   'islandora:sp-audioCModel': ['wav', 'mp3'],
   'islandora:sp_videoCModel': ['mp4', 'mov', 'qt', 'm4v', 'avi', 'mkv'],
   'islandora:binaryObjectCModel': [],
-  'islandora:bookCModel': ['jpg', 'jpeg', 'tif', 'tiff', 'jp2', 'jpg2', 'txt', 'shtml'],
-  'islandora:newspaperIssueCModel': ['jpg', 'jpeg', 'tif', 'tiff', 'jp2', 'jpg2'],
+  'islandora:bookCModel': ['jpg', 'jpeg', 'tif', 'tiff', 'jp2', 'jpg2', 'txt', 'shtml', 'pdf'],
+  'islandora:newspaperIssueCModel': ['jpg', 'jpeg', 'tif', 'tiff', 'jp2', 'jpg2', 'pdf'],
   'islandora:compoundCModel': [],
 }
 
@@ -216,10 +216,14 @@ def create_preprocess_package(package_metadata):
         page_folder = "{0}/{1}".format(package_folder, adjusted_index)
         os.system("mkdir {0}".format(page_folder))
         
-        tiff_page = "{0}/{1}.tif".format(package_folder, pagename)
+        tif_page = "{0}/{1}.tif".format(package_folder, pagename)
+        if os.path.exists(tif_page):
+          os.system("mv {0} {1}/OBJ.tif".format(tif_page, page_folder))
+          
+        tiff_page = "{0}/{1}.tiff".format(package_folder, pagename)
         if os.path.exists(tiff_page):
           os.system("mv {0} {1}/OBJ.tif".format(tiff_page, page_folder))
-          
+ 
         jp2_page = "{0}/{1}.jp2".format(package_folder, pagename)
         if os.path.exists(jp2_page):
           os.system("mv {0} {1}/JP2.jp2".format(jp2_page, page_folder))
@@ -235,6 +239,10 @@ def create_preprocess_package(package_metadata):
         shtml_page = "{0}/{1}.shtml".format(package_folder, pagename)
         if os.path.exists(shtml_page):
           os.system("mv {0} {1}/HOCR.shtml".format(shtml_page, page_folder))
+
+        pdf_page = "{0}/{1}.pdf".format(package_folder, pagename)
+        if os.path.exists(pdf_page):
+          os.system("mv {0} {1}/PDF.pdf".format(pdf_page, page_folder))
           
       metadata_filename = glob.glob("{0}/*.xml".format(package_folder))[0].split("/")[-1]
       os.system("mv {0}/{1} {0}/MODS.xml".format(package_folder, metadata_filename))
