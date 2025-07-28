@@ -154,11 +154,15 @@ def check_if_iid_exists_elsewhere(iid):
   return output
 
 def check_if_apache_is_down():
-  try: 
-    result = not requests.get('http://' + os.getenv('BASE_DOMAIN') + ':' + os.getenv('APACHE_EXTERNAL_PORT'), headers=headers).ok
-  except:
-    result = True
-  return result
+  """Determine apache container status and whether it can produce a meaningful response."""
+  status, output = subprocess.getstatusoutput("docker inspect apache")
+  if status != 0:
+      log("Apache container inspection status code is {str(status)}. This is bad.")
+      return True
+  # must load subprocess json output
+  netinfo = json.loads(output)
+  ipaddr = netinfo[0]["NetworkSettings"]["Networks"]["repoman"]["IPAddress"]
+  return not requests.get(f"http://{ipaddr}").ok
 
 def check_if_fedora_is_down():
   try:
