@@ -162,7 +162,7 @@ def check_if_apache_is_down():
 
 def check_if_fedora_is_down():
   try:
-    eesult = not requests.get('http://fedora.isle.lib.fsu.edu:8080', headers=headers).ok
+    result = not requests.get('http://fedora.isle.lib.fsu.edu:8080', headers=headers).ok
   except: 
     result = True
   return result
