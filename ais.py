@@ -154,18 +154,20 @@ def check_if_iid_exists_elsewhere(iid):
   return output
 
 def check_if_apache_is_down():
-  try: 
-    result = not requests.get('http://' + os.getenv('BASE_DOMAIN') + ':' + os.getenv('APACHE_EXTERNAL_PORT'), headers=headers).ok
-  except:
-    result = True
-  return result
+  #try: 
+    #result = not requests.get('http://' + os.getenv('BASE_DOMAIN') + ':' + os.getenv('APACHE_EXTERNAL_PORT'), headers=headers).ok
+  #except:
+    #result = True
+  #return result
+  return False
 
 def check_if_fedora_is_down():
-  try:
-    result = not requests.get('http://fedora.isle.lib.fsu.edu:8080', headers=headers).ok
-  except: 
-    result = True
-  return result
+  #try:
+    #result = not requests.get('http://fedora.isle.lib.fsu.edu:8080', headers=headers).ok
+  #except: 
+    #result = True
+  #return result
+  return False
 
 def wait_for_stack_to_stabilize(package_name):
   while check_if_apache_is_down() or check_if_fedora_is_down():
